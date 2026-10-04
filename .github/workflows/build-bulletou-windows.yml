@@ -28,7 +28,7 @@ jobs:
           $p = "BulletOu\crates\cuda_cpp\build.rs"
           $src = Get-Content $p -Raw
           $needle = '    build.flag("--use_fast_math");'
-          $replacement = '    build.flag("--use_fast_math");' + [Environment]::NewLine + '    build.warnings(false);' + [Environment]::NewLine + '    build.flag("--allow-unsupported-compiler");' + [Environment]::NewLine + '    build.flag("-arch=sm_75");'
+          $replacement = '    build.flag("--use_fast_math");' + [Environment]::NewLine + '    build.flag("--allow-unsupported-compiler");' + [Environment]::NewLine + '    build.flag("-arch=sm_75");'
           if (-not $src.Contains($needle)) { throw "build.rs patch target not found" }
           Set-Content -Path $p -Value ($src.Replace($needle, $replacement)) -Encoding utf8
 
@@ -60,7 +60,6 @@ jobs:
         shell: pwsh
         working-directory: BulletOu
         env:
-          CRATE_CC_NO_DEFAULTS: "1"
           CC_ENABLE_DEBUG_OUTPUT: "1"
         run: |
           cargo build --release --features cuda-cpp-backend --example bulletou
