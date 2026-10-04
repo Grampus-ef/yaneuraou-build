@@ -32,7 +32,7 @@ jobs:
             python
             mingw-w64-clang-x86_64-clang
 
-      - name: Build AVX2 engine
+      - name: Build k3k3+progress8 AVX2 engine
         shell: msys2 {0}
         run: |
           set -euxo pipefail
@@ -46,19 +46,39 @@ jobs:
           test -f YaneuraOu-by-gcc.exe
           cp YaneuraOu-by-gcc.exe ../../YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe
 
-      - name: Smoke test USI startup
+      - name: Build original k3k3 AVX2 engine
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd upstream/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_7_64_k3k3
+          make -j2 tournament \
+            COMPILER=clang++ \
+            YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_7_64_k3k3 \
+            ENGINE_NAME=YaneuraOu_Suisho11Plus_k3k3 \
+            TARGET_CPU=AVX2
+          test -f YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe ../../YaneuraOu_Suisho11Plus_k3k3-V990DEV_AVX2.exe
+
+      - name: Smoke test both USI engines
         shell: pwsh
         run: |
-          "usi`nquit`n" | .\YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe | Tee-Object -FilePath usi-smoke.txt
-          if (-not (Select-String -Path usi-smoke.txt -Pattern "usiok" -Quiet)) {
-            throw "USI smoke test failed: usiok was not found."
+          "usi`nquit`n" | .\YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe | Tee-Object -FilePath usi-smoke-progress8.txt
+          if (-not (Select-String -Path usi-smoke-progress8.txt -Pattern "usiok" -Quiet)) {
+            throw "progress8 USI smoke test failed."
+          }
+          "usi`nquit`n" | .\YaneuraOu_Suisho11Plus_k3k3-V990DEV_AVX2.exe | Tee-Object -FilePath usi-smoke-k3k3.txt
+          if (-not (Select-String -Path usi-smoke-k3k3.txt -Pattern "usiok" -Quiet)) {
+            throw "k3k3 USI smoke test failed."
           }
 
-      - name: Upload Windows executable
+      - name: Upload Windows executables
         uses: actions/upload-artifact@v4
         with:
-          name: YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2
+          name: YaneuraOu_Suisho11Plus_AB-V990DEV_AVX2
           path: |
             YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe
-            usi-smoke.txt
+            YaneuraOu_Suisho11Plus_k3k3-V990DEV_AVX2.exe
+            usi-smoke-progress8.txt
+            usi-smoke-k3k3.txt
           if-no-files-found: error
