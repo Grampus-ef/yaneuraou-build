@@ -13,7 +13,7 @@
 using namespace std;
 
 static constexpr uint32_t NNUE_VERSION = 0x7AF32F16;
-static constexpr uint32_t MAIN_HASH = 0xc203b032;
+static constexpr uint32_t MAIN_HASH = 0x3c203b32;
 static constexpr uint32_t FT_HASH = 0x5f134ab8;
 static constexpr size_t INPUT_SIZE=131949, FT_SIZE=1024, L1_OUT=8, L2_IN=14, L2_PAD=32, L2_SIZE=64, L3_IN=64, STACKS=72;
 static constexpr float QA=127.0f, QB=64.0f, BS=8128.0f;
@@ -73,7 +73,7 @@ int main(int argc,char**argv){
   write_u32(o,NNUE_VERSION); write_u32(o,MAIN_HASH); write_u32(o,(uint32_t)ARCH.size()); o.write(ARCH.data(),ARCH.size()); write_u32(o,FT_HASH);
   write_leb(o,l0b,QA); write_leb(o,l0w,QA);
   for(size_t st=0;st<STACKS;st++){
-    write_u32(o,0x3e5aa6ee);
+    write_u32(o,0x6333718a);
     for(size_t i=0;i<L1_OUT;i++) write_i32(o,q32(l1b[st*L1_OUT+i]));
     for(size_t i=0;i<L1_OUT*FT_SIZE;i++){ int8_t q=(int8_t)q8(l1w[st*L1_OUT*FT_SIZE+i]); o.write((char*)&q,1);}
     for(size_t i=0;i<L2_SIZE;i++) write_i32(o,q32(l2b[st*L2_SIZE+i]));
