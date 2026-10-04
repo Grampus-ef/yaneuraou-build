@@ -28,7 +28,7 @@ jobs:
           $p = "BulletOu\crates\cuda_cpp\build.rs"
           $src = Get-Content $p -Raw
           $needle = '    build.flag("--use_fast_math");'
-          $replacement = '    build.flag("--use_fast_math");' + [Environment]::NewLine + '    build.flag("--allow-unsupported-compiler");' + [Environment]::NewLine + '    build.flag("-arch=sm_75");'
+          $replacement = '    build.flag("--use_fast_math");' + [Environment]::NewLine + '    build.warnings(false);' + [Environment]::NewLine + '    build.flag("--allow-unsupported-compiler");' + [Environment]::NewLine + '    build.flag("-arch=sm_75");'
           if (-not $src.Contains($needle)) { throw "build.rs patch target not found" }
           Set-Content -Path $p -Value ($src.Replace($needle, $replacement)) -Encoding utf8
 
