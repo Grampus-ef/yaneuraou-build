@@ -40,11 +40,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install CUDA Toolkit 12.8
+      - name: Install CUDA Toolkit 13.2
         uses: Jimver/cuda-toolkit@v0.2.36
         id: cuda-toolkit
         with:
-          cuda: "12.8.0"
+          cuda: "13.2.0"
           method: network
           sub-packages: '["nvcc","cudart","cublas","visual_studio_integration"]'
 
@@ -68,16 +68,14 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item BulletOu\target\release\examples\bulletou.exe dist\bulletou.exe
-          $dlls = @("cudart64_12.dll","cublas64_12.dll","cublasLt64_12.dll")
-          foreach ($dll in $dlls) {
-            $p = Join-Path $env:CUDA_PATH "bin\$dll"
-            if (Test-Path $p) { Copy-Item $p dist\$dll }
-          }
+          Get-ChildItem (Join-Path $env:CUDA_PATH "bin") -Filter "cudart64*.dll" | Copy-Item -Destination dist
+          Get-ChildItem (Join-Path $env:CUDA_PATH "bin") -Filter "cublas64*.dll" | Copy-Item -Destination dist
+          Get-ChildItem (Join-Path $env:CUDA_PATH "bin") -Filter "cublasLt64*.dll" | Copy-Item -Destination dist
           Get-ChildItem dist
 
       - name: Upload BulletOu
         uses: actions/upload-artifact@v4
         with:
-          name: BulletOu-win64-cuda128
+          name: BulletOu-win64-cuda132
           path: dist/*
           if-no-files-found: error
