@@ -1,0 +1,28 @@
+name: Build state roundtrip tool
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/bulletou_state_to_nn.cpp"
+      - ".github/workflows/build-state-roundtrip.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          g++ -O2 -std=c++17 -static -s tools/bulletou_state_to_nn.cpp -o bulletou_state_to_nn.exe
+          test -f bulletou_state_to_nn.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bulletou_state_to_nn-win64
+          path: bulletou_state_to_nn.exe
