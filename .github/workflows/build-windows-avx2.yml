@@ -21,6 +21,24 @@ jobs:
           cd upstream
           git checkout c1b80eaa09fe13d5f12b1599d1ae4d53c224de30
 
+      - name: Enable STATIC_EVAL diagnostic output
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("upstream/source/engine/yaneuraou-engine/yaneuraou-search.cpp")
+          s = p.read_text(encoding="utf-8-sig")
+          old = """    //sync_cout << "\\n" << Eval::trace(p, *networks) << sync_endl;
+\t// TODO あとで
+}"""
+          new = """    // Diagnostic output used only by the A/B validation package.
+    sync_cout << "STATIC_EVAL " << Eval::evaluate(p) << sync_endl;
+}"""
+          if old not in s:
+              raise SystemExit("trace_eval patch target not found")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8-sig")
+          PY
+
       - name: Install MSYS2 clang64 toolchain
         uses: msys2/setup-msys2@v2
         with:
