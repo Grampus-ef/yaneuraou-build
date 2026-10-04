@@ -60,7 +60,7 @@ jobs:
         shell: pwsh
         working-directory: BulletOu
         env:
-          CRATE_CC_NO_DEFAULTS: "1"
+          CXX: "cl.exe"
           CC_ENABLE_DEBUG_OUTPUT: "1"
         run: |
           cargo build --release --features cuda-cpp-backend --example bulletou
