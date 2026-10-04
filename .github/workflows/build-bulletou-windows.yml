@@ -114,19 +114,19 @@ jobs:
           cargo build --release --features cuda-cpp-backend --example bulletou
           if (-not (Test-Path .\target\release\examples\bulletou.exe)) { throw "bulletou.exe not found" }
 
-      - name: Collect runtime
+      - name: Collect slim runtime
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item BulletOu\target\release\examples\bulletou.exe dist\bulletou.exe
-          Get-ChildItem (Join-Path $env:CUDA_PATH "bin") -Filter "cudart64*.dll" | Copy-Item -Destination dist
-          Get-ChildItem (Join-Path $env:CUDA_PATH "bin") -Filter "cublas64*.dll" | Copy-Item -Destination dist
-          Get-ChildItem (Join-Path $env:CUDA_PATH "bin") -Filter "cublasLt64*.dll" | Copy-Item -Destination dist
+          .\dist\bulletou.exe --help 2>&1 | Tee-Object -FilePath dist\bulletou-help.txt
+          dumpbin /dependents .\dist\bulletou.exe | Out-File -Encoding utf8 dist\bulletou-deps.txt
+          Get-FileHash .\dist\bulletou.exe -Algorithm SHA256 | Format-List | Out-File -Encoding ascii dist\SHA256.txt
           Get-ChildItem dist
 
-      - name: Upload BulletOu
+      - name: Upload BulletOu slim
         uses: actions/upload-artifact@v4
         with:
-          name: BulletOu-win64-cuda132
+          name: BulletOu-win64-cuda1281-slim
           path: dist/*
           if-no-files-found: error
