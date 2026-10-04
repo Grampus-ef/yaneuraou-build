@@ -22,6 +22,16 @@ jobs:
           cd BulletOu
           git checkout 169661c1833f3b1705f30d4e252ceaf2b6e892cb
 
+      - name: Allow current MSVC host compiler
+        shell: pwsh
+        run: |
+          $p = "BulletOu\crates\cuda_cpp\build.rs"
+          $src = Get-Content $p -Raw
+          $needle = '    build.flag("--use_fast_math");'
+          $replacement = '    build.flag("--use_fast_math");' + [Environment]::NewLine + '    build.flag("--allow-unsupported-compiler");'
+          if (-not $src.Contains($needle)) { throw "build.rs patch target not found" }
+          Set-Content -Path $p -Value ($src.Replace($needle, $replacement)) -Encoding utf8
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
