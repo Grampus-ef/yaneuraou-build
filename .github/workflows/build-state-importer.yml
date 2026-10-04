@@ -1,0 +1,25 @@
+name: Build BulletOu state importer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/nn_to_bulletou_state.cpp"
+      - ".github/workflows/build-state-importer.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build x64 importer
+        shell: pwsh
+        run: |
+          cl /nologo /O2 /EHsc /std:c++17 tools\nn_to_bulletou_state.cpp /Fe:nn_to_bulletou_state.exe
+          if (-not (Test-Path .\nn_to_bulletou_state.exe)) { throw "build failed" }
+      - name: Upload importer
+        uses: actions/upload-artifact@v4
+        with:
+          name: nn_to_bulletou_state-win64
+          path: nn_to_bulletou_state.exe
+          if-no-files-found: error
