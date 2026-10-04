@@ -42,8 +42,7 @@ jobs:
             COMPILER=clang++ \
             YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_7_64_k3k3_progress8 \
             ENGINE_NAME=YaneuraOu_Suisho11Plus_k3k3_progress8 \
-            TARGET_CPU=AVX2 \
-            EXTRA_CPPFLAGS='-DHASH_KEY_BITS=128 -DTT_CLUSTER_SIZE=4 -DUSE_LAZY_EVALUATE -DUSE_FINNY_TABLES -DENGINE_VERSION="V9.90DEV"'
+            TARGET_CPU=AVX2
           test -f YaneuraOu-by-gcc.exe
           cp YaneuraOu-by-gcc.exe ../../YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe
 
