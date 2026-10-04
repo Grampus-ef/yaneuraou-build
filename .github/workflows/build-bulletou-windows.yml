@@ -1,0 +1,73 @@
+name: Build BulletOu Windows
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-bulletou-windows.yml"
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout BulletOu
+        shell: bash
+        run: |
+          git clone --branch shogi-support https://github.com/yaneurao/BulletOu.git BulletOu
+          cd BulletOu
+          git checkout 169661c1833f3b1705f30d4e252ceaf2b6e892cb
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CUDA Toolkit 12.8
+        uses: Jimver/cuda-toolkit@v0.2.36
+        id: cuda-toolkit
+        with:
+          cuda: "12.8.0"
+          method: network
+          sub-packages: '["nvcc","cudart","cublas","visual_studio_integration"]'
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          nvcc --version
+          Write-Host "CUDA_PATH=$env:CUDA_PATH"
+
+      - name: Build BulletOu
+        shell: pwsh
+        working-directory: BulletOu
+        run: |
+          cargo build --release --features cuda-cpp-backend --example bulletou
+          if (-not (Test-Path .\target\release\examples\bulletou.exe)) { throw "bulletou.exe not found" }
+
+      - name: Collect runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item BulletOu\target\release\examples\bulletou.exe dist\bulletou.exe
+          $dlls = @("cudart64_12.dll","cublas64_12.dll","cublasLt64_12.dll")
+          foreach ($dll in $dlls) {
+            $p = Join-Path $env:CUDA_PATH "bin\$dll"
+            if (Test-Path $p) { Copy-Item $p dist\$dll }
+          }
+          Get-ChildItem dist
+
+      - name: Upload BulletOu
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-win64-cuda128
+          path: dist/*
+          if-no-files-found: error
