@@ -129,9 +129,33 @@ jobs:
           Get-FileHash .\dist\bulletou.exe -Algorithm SHA256 | Format-List | Out-File -Encoding ascii dist\SHA256.txt
           Get-ChildItem dist
 
-      - name: Upload BulletOu slim
+      - name: Pack CUDA runtime split
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path core | Out-Null
+          Copy-Item dist\bulletou.exe core\
+          Copy-Item dist\cudart64_12.dll core\
+          Copy-Item dist\cublas64_12.dll core\
+          if (Test-Path dist\nvJitLink_120_0.dll) { Copy-Item dist\nvJitLink_120_0.dll core\ }
+          Copy-Item dist\bulletou-help.txt core\
+          Copy-Item dist\bulletou-deps.txt core\
+          Copy-Item dist\SHA256.txt core\
+          Compress-Archive -Path core\* -DestinationPath BulletOu-core.zip -CompressionLevel Optimal
+          Compress-Archive -Path dist\cublasLt64_12.dll -DestinationPath BulletOu-cublasLt.zip -CompressionLevel Optimal
+          Get-Item BulletOu-core.zip,BulletOu-cublasLt.zip | Format-Table Name,Length
+
+      - name: Upload BulletOu core
         uses: actions/upload-artifact@v4
         with:
-          name: BulletOu-win64-cuda1281-runtime
-          path: dist/*
+          name: BulletOu-win64-cuda1281-core
+          path: BulletOu-core.zip
           if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload cuBLASLt runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-cublasLt
+          path: BulletOu-cublasLt.zip
+          if-no-files-found: error
+          compression-level: 0
