@@ -12,11 +12,22 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+
       - name: Build x64 importer
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          cl /nologo /O2 /EHsc /std:c++17 tools\nn_to_bulletou_state.cpp /Fe:nn_to_bulletou_state.exe
-          if (-not (Test-Path .\nn_to_bulletou_state.exe)) { throw "build failed" }
+          set -euxo pipefail
+          g++ -O2 -std=c++17 -static -s tools/nn_to_bulletou_state.cpp -o nn_to_bulletou_state.exe
+          test -f nn_to_bulletou_state.exe
+
       - name: Upload importer
         uses: actions/upload-artifact@v4
         with:
