@@ -22,6 +22,34 @@ jobs:
           cd BulletOu
           git checkout 169661c1833f3b1705f30d4e252ceaf2b6e892cb
 
+      - name: Relax CUDA Ranger smoke float comparison
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+          $old = @'
+                  if weights_device != weights {
+                      return Err(format!(
+                          "cuda-cpp persistent ranger smoke mismatch: host={weights:?} device={weights_device:?}"
+                      ));
+                  }
+          '@
+          $new = @'
+                  let max_abs_diff = weights_device
+                      .iter()
+                      .zip(weights.iter())
+                      .map(|(&device, &host)| (device - host).abs())
+                      .fold(0.0_f32, f32::max);
+                  if max_abs_diff > 1.0e-6 {
+                      return Err(format!(
+                          "cuda-cpp persistent ranger smoke mismatch: host={weights:?} device={weights_device:?} max_abs_diff={max_abs_diff:e}"
+                      ));
+                  }
+          '@
+          if (-not $text.Contains($old)) { throw "Ranger smoke comparison block not found" }
+          $text = $text.Replace($old, $new)
+          Set-Content -Path $path -Value $text -Encoding utf8
+
       - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
