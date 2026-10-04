@@ -22,15 +22,67 @@ jobs:
           cd BulletOu
           git checkout 169661c1833f3b1705f30d4e252ceaf2b6e892cb
 
-      - name: Allow current MSVC host compiler
+      - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
-          $p = "BulletOu\crates\cuda_cpp\build.rs"
-          $src = Get-Content $p -Raw
-          $needle = '    build.flag("--use_fast_math");'
-          $replacement = '    build.flag("--use_fast_math");' + [Environment]::NewLine + '    build.flag("--allow-unsupported-compiler");' + [Environment]::NewLine + '    build.flag("-arch=sm_75");'
-          if (-not $src.Contains($needle)) { throw "build.rs patch target not found" }
-          Set-Content -Path $p -Value ($src.Replace($needle, $replacement)) -Encoding utf8
+          @'
+          use std::{env, fs, path::PathBuf, process::Command};
+
+          fn cuda_path() -> PathBuf {
+              for name in ["CUDA_PATH", "CUDA_PATH_V13_2", "CUDA_PATH_V13_1", "CUDA_PATH_V13_0", "CUDA_PATH_V12_9", "CUDA_PATH_V12_8"] {
+                  if let Ok(value) = env::var(name) {
+                      let p = PathBuf::from(value);
+                      if p.exists() { return p; }
+                  }
+              }
+              panic!("CUDA_PATH not found");
+          }
+
+          fn run(cmd: &mut Command) {
+              println!("running: {:?}", cmd);
+              let status = cmd.status().expect("failed to spawn command");
+              if !status.success() { panic!("command failed: {:?}", cmd); }
+          }
+
+          fn main() {
+              let cuda = cuda_path();
+              let include = cuda.join("include");
+              let lib_dir = cuda.join("lib").join("x64");
+              let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+              let obj = out.join("bulletou_cuda_backend.obj");
+              let lib = out.join("bulletou_cuda_cpp_backend.lib");
+
+              println!("cargo:rerun-if-changed=cpp/bulletou_cuda_backend.cu");
+              println!("cargo:rerun-if-changed=cpp/batch_norm.cuh");
+              println!("cargo:rerun-if-changed=cpp/bn_qat.cuh");
+
+              run(Command::new("nvcc")
+                  .arg("-ccbin=cl.exe")
+                  .arg("-I").arg(&include)
+                  .arg("-std=c++17")
+                  .arg("-O3")
+                  .arg("--use_fast_math")
+                  .arg("--allow-unsupported-compiler")
+                  .arg("-gencode").arg("arch=compute_75,code=sm_75")
+                  .arg("-gencode").arg("arch=compute_75,code=compute_75")
+                  .arg("-Xcompiler").arg("/MD")
+                  .arg("-Xcompiler").arg("/O2")
+                  .arg("-c")
+                  .arg("cpp/bulletou_cuda_backend.cu")
+                  .arg("-o").arg(&obj));
+
+              run(Command::new("lib.exe")
+                  .arg("/NOLOGO")
+                  .arg(format!("/OUT:{}", lib.display()))
+                  .arg(&obj));
+
+              println!("cargo:rustc-link-search=native={}", out.display());
+              println!("cargo:rustc-link-lib=static=bulletou_cuda_cpp_backend");
+              println!("cargo:rustc-link-search=native={}", lib_dir.display());
+              println!("cargo:rustc-link-lib=dylib=cudart");
+              println!("cargo:rustc-link-lib=dylib=cublas");
+          }
+          '@ | Set-Content -Path "BulletOu\crates\cuda_cpp\build.rs" -Encoding utf8
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -59,9 +111,6 @@ jobs:
       - name: Build BulletOu
         shell: pwsh
         working-directory: BulletOu
-        env:
-          CXX: "cl.exe"
-          CC_ENABLE_DEBUG_OUTPUT: "1"
         run: |
           cargo build --release --features cuda-cpp-backend --example bulletou
           if (-not (Test-Path .\target\release\examples\bulletou.exe)) { throw "bulletou.exe not found" }
