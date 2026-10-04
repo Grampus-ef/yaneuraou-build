@@ -119,6 +119,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item BulletOu\target\release\examples\bulletou.exe dist\bulletou.exe
+          $cudaBin = Join-Path $env:CUDA_PATH "bin"
+          foreach ($dll in @("cudart64_12.dll","cublas64_12.dll","cublasLt64_12.dll","nvJitLink_120_0.dll")) {
+            $src = Join-Path $cudaBin $dll
+            if (Test-Path $src) { Copy-Item $src (Join-Path "dist" $dll) }
+          }
           .\dist\bulletou.exe --help 2>&1 | Tee-Object -FilePath dist\bulletou-help.txt
           dumpbin /dependents .\dist\bulletou.exe | Out-File -Encoding utf8 dist\bulletou-deps.txt
           Get-FileHash .\dist\bulletou.exe -Algorithm SHA256 | Format-List | Out-File -Encoding ascii dist\SHA256.txt
@@ -127,6 +132,6 @@ jobs:
       - name: Upload BulletOu slim
         uses: actions/upload-artifact@v4
         with:
-          name: BulletOu-win64-cuda1281-slim
+          name: BulletOu-win64-cuda1281-runtime
           path: dist/*
           if-no-files-found: error
