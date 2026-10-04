@@ -98,7 +98,7 @@ jobs:
         with:
           cuda: "13.2.0"
           method: network
-          sub-packages: '["nvcc","cudart","cublas","visual_studio_integration"]'
+          sub-packages: '["nvcc","crt","cudart","cudart_dev","cublas","cublas_dev","visual_studio_integration"]'
 
       - name: Show toolchain
         shell: pwsh
