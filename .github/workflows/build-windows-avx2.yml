@@ -1,0 +1,65 @@
+name: Build Windows AVX2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-windows-avx2.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Checkout YaneuraOu
+        shell: bash
+        run: |
+          git clone https://github.com/yaneurao/YaneuraOu.git upstream
+          cd upstream
+          git checkout c1b80eaa09fe13d5f12b1599d1ae4d53c224de30
+
+      - name: Install MSYS2 clang64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            make
+            python
+            mingw-w64-clang-x86_64-clang
+
+      - name: Build AVX2 engine
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd upstream/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_7_64_k3k3_progress8
+          make -j2 tournament \
+            COMPILER=clang++ \
+            YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_7_64_k3k3_progress8 \
+            ENGINE_NAME=YaneuraOu_Suisho11Plus_k3k3_progress8 \
+            TARGET_CPU=AVX2 \
+            EXTRA_CPPFLAGS='-DHASH_KEY_BITS=128 -DTT_CLUSTER_SIZE=4 -DUSE_LAZY_EVALUATE -DUSE_FINNY_TABLES -DENGINE_VERSION="V9.90DEV"'
+          test -f YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe ../../YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe
+
+      - name: Smoke test USI startup
+        shell: pwsh
+        run: |
+          "usi`nquit`n" | .\YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe | Tee-Object -FilePath usi-smoke.txt
+          if (-not (Select-String -Path usi-smoke.txt -Pattern "usiok" -Quiet)) {
+            throw "USI smoke test failed: usiok was not found."
+          }
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2
+          path: |
+            YaneuraOu_Suisho11Plus_k3k3_progress8-V990DEV_AVX2.exe
+            usi-smoke.txt
+          if-no-files-found: error
