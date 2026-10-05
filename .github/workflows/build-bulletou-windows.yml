@@ -177,6 +177,29 @@ jobs:
 
           Set-Content -Path $path -Value $text -Encoding utf8
 
+      - name: Allow zero SFNN layer LR multipliers
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+          $old = @'
+                  for (name, value) in [("sfnn-ft-lr-mult", self.sfnn_ft_lr_mult),
+                      ("sfnn-l2-lr-mult", self.sfnn_l2_lr_mult), ("sfnn-l3-lr-mult", self.sfnn_l3_lr_mult)] {
+                      if !value.is_finite() || value <= 0.0 {
+                          return Err(format!("--{name} must be finite and positive (got {value})"));
+                      }
+          '@
+          $new = @'
+                  for (name, value) in [("sfnn-ft-lr-mult", self.sfnn_ft_lr_mult),
+                      ("sfnn-l2-lr-mult", self.sfnn_l2_lr_mult), ("sfnn-l3-lr-mult", self.sfnn_l3_lr_mult)] {
+                      if !value.is_finite() || value < 0.0 {
+                          return Err(format!("--{name} must be finite and non-negative (got {value})"));
+                      }
+          '@
+          if (-not $text.Contains($old)) { throw "SFNN layer LR validation block not found" }
+          $text = $text.Replace($old, $new)
+          Set-Content -Path $path -Value $text -Encoding utf8
+
       - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
