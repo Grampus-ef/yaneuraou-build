@@ -50,6 +50,133 @@ jobs:
           $text = $text.Replace($old, $new)
           Set-Content -Path $path -Value $text -Encoding utf8
 
+      - name: Add BulletOu initial-state smoke mode
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+
+          $old = @'
+              /// Run the C++/CUDA backend bring-up smoke and exit.
+              #[arg(long)]
+              cuda_cpp_smoke: bool,
+          '@
+          $new = @'
+              /// Run the C++/CUDA backend bring-up smoke and exit.
+              #[arg(long)]
+              cuda_cpp_smoke: bool,
+
+              /// Load an SFNN --initial-state (plus optional --sfnn-progress-bin),
+              /// validate it with BulletOu's native loader, re-export nn.bin,
+              /// and exit without reading teacher data or performing updates.
+              #[arg(long)]
+              cuda_cpp_state_smoke: bool,
+          '@
+          if (-not $text.Contains($old)) { throw "cuda_cpp_smoke field block not found" }
+          $text = $text.Replace($old, $new)
+
+          $old = @'
+                  if self.cuda_cpp_smoke {
+                      if self.cuda_cpp_train_steps.is_some() {
+                          return Err("--cuda-cpp-smoke and --cuda-cpp-train-steps cannot be used together".to_string());
+                      }
+          '@
+          $new = @'
+                  if self.cuda_cpp_state_smoke {
+                      if self.initial_state.is_none() {
+                          return Err("--cuda-cpp-state-smoke requires --initial-state".to_string());
+                      }
+                      if !self.eval_type().uses_layerstack() {
+                          return Err("--cuda-cpp-state-smoke currently supports SFNN / LayerStack architectures only".to_string());
+                      }
+                      return Ok(());
+                  }
+                  if self.cuda_cpp_smoke {
+                      if self.cuda_cpp_train_steps.is_some() {
+                          return Err("--cuda-cpp-smoke and --cuda-cpp-train-steps cannot be used together".to_string());
+                      }
+          '@
+          if (-not $text.Contains($old)) { throw "validate_cuda_cpp_backend_options smoke block not found" }
+          $text = $text.Replace($old, $new)
+
+          $old = @'
+              if args.bench_teacher_prepare_batches.is_some() {
+          '@
+          $new = @'
+              if args.cuda_cpp_state_smoke {
+                  #[cfg(feature = "cuda-cpp-backend")]
+                  {
+                      if let Err(e) = run_cuda_cpp_state_smoke(&args) {
+                          eprintln!("error: cuda-cpp state smoke failed: {e}");
+                          std::process::exit(2);
+                      }
+                      return;
+                  }
+                  #[cfg(not(feature = "cuda-cpp-backend"))]
+                  {
+                      eprintln!("error: --cuda-cpp-state-smoke requires building with --features cuda-cpp-backend");
+                      std::process::exit(2);
+                  }
+              }
+              if args.bench_teacher_prepare_batches.is_some() {
+          '@
+          if (-not $text.Contains($old)) { throw "main bench_teacher block not found" }
+          $text = $text.Replace($old, $new)
+
+          $old = @'
+          fn run_cuda_cpp_backend(args: &Args) -> Result<(), String> {
+          '@
+          $new = @'
+          #[cfg(feature = "cuda-cpp-backend")]
+          fn run_cuda_cpp_state_smoke(args: &Args) -> Result<(), String> {
+              let feature_kind = cuda_cpp_sfnn_feature_kind_from_arch(args.arch())?;
+              let state = build_sfnn_initial_state_for_cuda_cpp(args, feature_kind)?;
+              state.weights.validate()?;
+              let shape = state.weights.shape;
+              let progress_params = cuda_cpp_sfnn_progress_params_for_state(state.progress.as_ref())?;
+
+              let out_dir = std::path::Path::new("state_smoke_out");
+              std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
+              let out_nn = out_dir.join("nn.bin");
+              if out_nn.exists() {
+                  std::fs::remove_file(&out_nn).map_err(|e| e.to_string())?;
+              }
+              let out_progress = out_dir.join("progress.bin");
+              if out_progress.exists() {
+                  std::fs::remove_file(&out_progress).map_err(|e| e.to_string())?;
+              }
+
+              let readback = sfnn_initial_weights_into_readback(state.weights);
+              write_cuda_cpp_sfnn_nn_bin(
+                  &out_nn,
+                  feature_kind,
+                  shape,
+                  &readback,
+                  effective_sfnn_factorizer_spec(args),
+                  effective_sfnn_factorizer_alpha(args),
+                  None,
+                  None,
+                  progress_params.as_ref(),
+              )?;
+
+              eprintln!("  state smoke arch = {}", args.arch().cli_name());
+              eprintln!("  state smoke shape = {:?}", shape);
+              eprintln!("  state smoke optimizer = {}", if state.optimizer_states.is_some() { "present" } else { "fresh/absent" });
+              eprintln!("  state smoke output = {}", out_nn.display());
+              if out_progress.exists() {
+                  eprintln!("  state smoke progress = {}", out_progress.display());
+              }
+              eprintln!("  cuda-cpp state smoke = ok");
+              Ok(())
+          }
+
+          fn run_cuda_cpp_backend(args: &Args) -> Result<(), String> {
+          '@
+          if (-not $text.Contains($old)) { throw "run_cuda_cpp_backend function marker not found" }
+          $text = $text.Replace($old, $new)
+
+          Set-Content -Path $path -Value $text -Encoding utf8
+
       - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
