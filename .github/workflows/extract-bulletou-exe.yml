@@ -1,0 +1,48 @@
+name: Extract BulletOu EXE
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/extract-bulletou-exe.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  extract:
+    runs-on: windows-2022
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Download run 16 core artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-core
+          path: artifact
+          github-token: ${{ github.token }}
+          repository: Grampus-ef/yaneuraou-build
+          run-id: 37219671937
+
+      - name: Extract bulletou.exe
+        shell: pwsh
+        run: |
+          Get-ChildItem artifact -Recurse | Format-Table FullName,Length
+          $zip = Get-ChildItem artifact -Filter "BulletOu-core.zip" -Recurse | Select-Object -First 1
+          if (-not $zip) { throw "BulletOu-core.zip not found" }
+          New-Item -ItemType Directory -Force -Path exe | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath extracted -Force
+          $exe = Get-ChildItem extracted -Filter "bulletou.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "bulletou.exe not found" }
+          Copy-Item $exe.FullName exe\bulletou.exe
+          Get-FileHash exe\bulletou.exe -Algorithm SHA256 | Format-List
+
+      - name: Upload BulletOu EXE only
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-smoke-tolerance-exe
+          path: exe/bulletou.exe
+          if-no-files-found: error
+          compression-level: 6
