@@ -17,14 +17,14 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Download run 16 core artifact
+      - name: Download run 17 core artifact
         uses: actions/download-artifact@v4
         with:
           name: BulletOu-win64-cuda1281-core
           path: artifact
           github-token: ${{ github.token }}
           repository: Grampus-ef/yaneuraou-build
-          run-id: 37219671937
+          run-id: 37298724821
 
       - name: Extract bulletou.exe
         shell: pwsh
@@ -42,7 +42,7 @@ jobs:
       - name: Upload BulletOu EXE only
         uses: actions/upload-artifact@v4
         with:
-          name: BulletOu-win64-cuda1281-smoke-tolerance-exe
+          name: BulletOu-win64-cuda1281-state-smoke-exe
           path: exe/bulletou.exe
           if-no-files-found: error
           compression-level: 6
