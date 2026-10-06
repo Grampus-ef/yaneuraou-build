@@ -311,6 +311,31 @@ jobs:
 
           Set-Content -Path $path -Value $text -Encoding utf8
 
+      - name: Fix SFNN pinned upload-slot reuse race
+        shell: pwsh
+        run: |
+          $path = "BulletOu\crates\cuda_cpp\src\lib.rs"
+          $text = Get-Content -Raw -Path $path
+
+          $old = @'
+                  if self.in_use {
+                      self.compute_done.wait(upload_ctx)?;
+                  }
+          '@
+          $new = @'
+                  if self.in_use {
+                      // The device-buffer overwrite is ordered by compute_done on the
+                      // upload stream, but the CPU memcpy into the pinned staging buffer
+                      // happens immediately. Wait for the previous H2D from this slot to
+                      // finish before reusing the pinned host buffer.
+                      self.upload_ready.synchronize()?;
+                      self.compute_done.wait(upload_ctx)?;
+                  }
+          '@
+          if (-not $text.Contains($old)) { throw "SFNN upload-slot reuse block not found" }
+          $text = $text.Replace($old, $new)
+          Set-Content -Path $path -Value $text -Encoding utf8
+
       - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
