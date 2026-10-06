@@ -1,0 +1,30 @@
+name: Export 7zip Linux Tool
+
+on:
+  push:
+    paths:
+      - ".github/workflows/export-7zip-linux.yml"
+
+jobs:
+  export:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download 7-Zip Linux
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 \
+            -o 7z-linux.tar.xz \
+            https://github.com/ip7z/7zip/releases/download/26.02/7z2602-linux-x64.tar.xz
+          mkdir out
+          tar -xf 7z-linux.tar.xz -C out
+          test -x out/7zz
+          ./out/7zz i | head -20
+
+      - name: Upload 7zz
+        uses: actions/upload-artifact@v4
+        with:
+          name: 7zip-linux-x64
+          path: out/7zz
+          compression-level: 0
+          if-no-files-found: error
