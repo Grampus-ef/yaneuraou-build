@@ -200,6 +200,109 @@ jobs:
           $text = $text.Replace($old, $new)
           Set-Content -Path $path -Value $text -Encoding utf8
 
+      - name: Add SFNN hard-bucket training diagnostics
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+
+          $old = @'
+              let mut checkpoint_chunk_idx = 0usize;
+              let mut last_checkpoint_metrics = None;
+              let mut deferred_direct_checkpoint = None;
+              let mut last_epoch_banner = None;
+          '@
+          $new = @'
+              let mut diag_bucket_seen = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_bucket_effective = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_bucket_zero_weight = vec![0u64; cuda_shape.num_stacks];
+              let mut checkpoint_chunk_idx = 0usize;
+              let mut last_checkpoint_metrics = None;
+              let mut deferred_direct_checkpoint = None;
+              let mut last_epoch_banner = None;
+          '@
+          if (-not $text.Contains($old)) { throw "normal SFNN direct-loop marker not found" }
+          $text = $text.Replace($old, $new)
+
+          $loopMarker = "    let mut diag_bucket_seen = vec![0u64; cuda_shape.num_stacks];"
+          $loopStart = $text.IndexOf($loopMarker)
+          if ($loopStart -lt 0) { throw "diagnostic loop start not found" }
+
+          $bucketNeedle = @'
+                  } else {
+                      fast.buckets.as_slice()
+                  };
+                  let batch = SfnnTrainStepHostBatch {
+          '@
+          $bucketPos = $text.IndexOf($bucketNeedle, $loopStart)
+          if ($bucketPos -lt 0) { throw "normal SFNN hard-bucket block not found" }
+          $bucketNew = @'
+                  } else {
+                      fast.buckets.as_slice()
+                  };
+                  for (sample, &bucket) in buckets.iter().enumerate() {
+                      if bucket < 0 {
+                          continue;
+                      }
+                      let bucket = bucket as usize;
+                      if bucket >= diag_bucket_seen.len() {
+                          continue;
+                      }
+                      diag_bucket_seen[bucket] = diag_bucket_seen[bucket].saturating_add(1);
+                      let weight = fast.weights.get(sample).copied().unwrap_or(0.0);
+                      if weight > 0.0 {
+                          diag_bucket_effective[bucket] = diag_bucket_effective[bucket].saturating_add(1);
+                      } else {
+                          diag_bucket_zero_weight[bucket] = diag_bucket_zero_weight[bucket].saturating_add(1);
+                      }
+                  }
+                  let batch = SfnnTrainStepHostBatch {
+          '@
+          $text = $text.Substring(0, $bucketPos) + $bucketNew + $text.Substring($bucketPos + $bucketNeedle.Length)
+
+          $summaryNeedle = @'
+              if profile_count > 0 {
+          '@
+          $summaryPos = $text.IndexOf($summaryNeedle, $loopStart)
+          if ($summaryPos -lt 0) { throw "normal SFNN summary marker not found" }
+          $summaryNew = @'
+              let diag_total_seen: u64 = diag_bucket_seen.iter().sum();
+              let diag_total_effective: u64 = diag_bucket_effective.iter().sum();
+              let diag_touched = diag_bucket_seen.iter().filter(|&&count| count != 0).count();
+              let diag_effective_touched = diag_bucket_effective.iter().filter(|&&count| count != 0).count();
+              eprintln!(
+                  "  [SFNN HARD BUCKET DIAG] stacks={} progress_buckets={} seen_positions={} effective_positions={} touched={} effective_touched={}",
+                  cuda_shape.num_stacks,
+                  progress_bucket_count,
+                  diag_total_seen,
+                  diag_total_effective,
+                  diag_touched,
+                  diag_effective_touched
+              );
+              for bucket in 0..cuda_shape.num_stacks {
+                  let seen = diag_bucket_seen[bucket];
+                  let effective = diag_bucket_effective[bucket];
+                  let zero_weight = diag_bucket_zero_weight[bucket];
+                  if seen == 0 {
+                      continue;
+                  }
+                  let progress_count = progress_bucket_count.max(1);
+                  eprintln!(
+                      "    [SFNN HARD BUCKET DIAG] bucket={:02} base={} progress={} seen={} effective={} zero_weight={}",
+                      bucket,
+                      bucket / progress_count,
+                      bucket % progress_count,
+                      seen,
+                      effective,
+                      zero_weight
+                  );
+              }
+              if profile_count > 0 {
+          '@
+          $text = $text.Substring(0, $summaryPos) + $summaryNew + $text.Substring($summaryPos + $summaryNeedle.Length)
+
+          Set-Content -Path $path -Value $text -Encoding utf8
+
       - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
