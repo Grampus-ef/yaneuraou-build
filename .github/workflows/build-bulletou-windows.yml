@@ -344,18 +344,12 @@ jobs:
           '@
           $text = $text.Substring(0, $varPos) + $varNew + $text.Substring($varPos + $varNeedle.Length)
 
-          # Insert immediately after the profiled/pipelined train step and before optimizer bookkeeping.
-          $stepNeedle = @'
-                  .map_err(|e| e.to_string())?;
-              }
-              if is_optimizer_step {
-          '@
+          # Insert immediately before the SFNN optimizer bookkeeping. Starting from
+          # the SFNN-only loop marker avoids matching earlier plain-NNUE code.
+          $stepNeedle = "        if is_optimizer_step {"
           $stepPos = $text.IndexOf($stepNeedle, $loopStart)
-          if ($stepPos -lt 0) { throw "SFNN post-step marker not found" }
+          if ($stepPos -lt 0) { throw "SFNN optimizer-bookkeeping marker not found" }
           $stepNew = @'
-                  .map_err(|e| e.to_string())?;
-              }
-
               // Diagnostic only: force completion and inspect the BCE output gradient
               // produced for this exact mini-batch. This changes performance, not math.
               ctx.synchronize().map_err(|e| e.to_string())?;
