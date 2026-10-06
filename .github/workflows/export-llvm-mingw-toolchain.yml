@@ -14,14 +14,14 @@ jobs:
         run: |
           set -euxo pipefail
           curl -L --fail --retry 3 \
-            -o llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz \
-            https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz
-          sha256sum llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz
+            -o llvm-mingw-20260922-msvcrt-ubuntu-22.04-x86_64.tar.xz \
+            https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-msvcrt-ubuntu-22.04-x86_64.tar.xz
+          sha256sum llvm-mingw-20260922-msvcrt-ubuntu-22.04-x86_64.tar.xz
 
       - name: Upload toolchain
         uses: actions/upload-artifact@v4
         with:
-          name: llvm-mingw-20260922-ucrt-linux-x86_64
-          path: llvm-mingw-20260922-ucrt-ubuntu-22.04-x86_64.tar.xz
+          name: llvm-mingw-20260922-msvcrt-linux-x86_64
+          path: llvm-mingw-20260922-msvcrt-ubuntu-22.04-x86_64.tar.xz
           compression-level: 0
           if-no-files-found: error
