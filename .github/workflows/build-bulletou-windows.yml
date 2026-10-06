@@ -206,11 +206,15 @@ jobs:
           $path = "BulletOu\examples\bulletou.rs"
           $text = Get-Content -Raw -Path $path
 
+          # Anchor on the SFNN-only dirty-bucket declarations so the patch
+          # cannot accidentally land in the earlier plain-NNUE training loop.
           $old = @'
               let mut checkpoint_chunk_idx = 0usize;
               let mut last_checkpoint_metrics = None;
               let mut deferred_direct_checkpoint = None;
               let mut last_epoch_banner = None;
+              let mut dirty_bucket_marks =
+                  if args.sfnn_dirty_bucket_update { vec![false; cuda_shape.num_stacks] } else { Vec::new() };
           '@
           $new = @'
               let mut diag_bucket_seen = vec![0u64; cuda_shape.num_stacks];
@@ -220,13 +224,15 @@ jobs:
               let mut last_checkpoint_metrics = None;
               let mut deferred_direct_checkpoint = None;
               let mut last_epoch_banner = None;
+              let mut dirty_bucket_marks =
+                  if args.sfnn_dirty_bucket_update { vec![false; cuda_shape.num_stacks] } else { Vec::new() };
           '@
-          if (-not $text.Contains($old)) { throw "normal SFNN direct-loop marker not found" }
+          if (-not $text.Contains($old)) { throw "SFNN direct-loop marker not found" }
           $text = $text.Replace($old, $new)
 
           $loopMarker = "    let mut diag_bucket_seen = vec![0u64; cuda_shape.num_stacks];"
           $loopStart = $text.IndexOf($loopMarker)
-          if ($loopStart -lt 0) { throw "diagnostic loop start not found" }
+          if ($loopStart -lt 0) { throw "SFNN diagnostic loop start not found" }
 
           $bucketNeedle = @'
                   } else {
@@ -235,7 +241,7 @@ jobs:
                   let batch = SfnnTrainStepHostBatch {
           '@
           $bucketPos = $text.IndexOf($bucketNeedle, $loopStart)
-          if ($bucketPos -lt 0) { throw "normal SFNN hard-bucket block not found" }
+          if ($bucketPos -lt 0) { throw "SFNN hard-bucket block not found" }
           $bucketNew = @'
                   } else {
                       fast.buckets.as_slice()
@@ -260,11 +266,13 @@ jobs:
           '@
           $text = $text.Substring(0, $bucketPos) + $bucketNew + $text.Substring($bucketPos + $bucketNeedle.Length)
 
+          # The only profile summary after this SFNN loop is immediately after
+          # the direct-train summary, so insert the aggregate diagnostics there.
           $summaryNeedle = @'
               if profile_count > 0 {
           '@
           $summaryPos = $text.IndexOf($summaryNeedle, $loopStart)
-          if ($summaryPos -lt 0) { throw "normal SFNN summary marker not found" }
+          if ($summaryPos -lt 0) { throw "SFNN summary marker not found" }
           $summaryNew = @'
               let diag_total_seen: u64 = diag_bucket_seen.iter().sum();
               let diag_total_effective: u64 = diag_bucket_effective.iter().sum();
