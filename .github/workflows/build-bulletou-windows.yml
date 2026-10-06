@@ -311,6 +311,164 @@ jobs:
 
           Set-Content -Path $path -Value $text -Encoding utf8
 
+      - name: Add SFNN BCE output-gradient diagnostics
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+
+          $loopMarker = "    let mut diag_bucket_seen = vec![0u64; cuda_shape.num_stacks];"
+          $loopStart = $text.IndexOf($loopMarker)
+          if ($loopStart -lt 0) { throw "SFNN hard-bucket diagnostic loop marker not found" }
+
+          $varNeedle = @'
+              let mut diag_bucket_zero_weight = vec![0u64; cuda_shape.num_stacks];
+              let mut checkpoint_chunk_idx = 0usize;
+          '@
+          $varPos = $text.IndexOf($varNeedle, $loopStart)
+          if ($varPos -lt 0) { throw "SFNN diagnostic variable marker not found" }
+          $varNew = @'
+              let mut diag_bucket_zero_weight = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_grad_nonzero_samples = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_grad_zero_samples = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_grad_nonzero_batches = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_grad_max_abs_batch_sum = vec![0.0f32; cuda_shape.num_stacks];
+              let mut diag_zero_target0 = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_zero_target1 = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_zero_target_mid = vec![0u64; cuda_shape.num_stacks];
+              let mut diag_zero_z_min = vec![f32::INFINITY; cuda_shape.num_stacks];
+              let mut diag_zero_z_max = vec![f32::NEG_INFINITY; cuda_shape.num_stacks];
+              let mut diag_zero_t_min = vec![f32::INFINITY; cuda_shape.num_stacks];
+              let mut diag_zero_t_max = vec![f32::NEG_INFINITY; cuda_shape.num_stacks];
+              let mut checkpoint_chunk_idx = 0usize;
+          '@
+          $text = $text.Substring(0, $varPos) + $varNew + $text.Substring($varPos + $varNeedle.Length)
+
+          # Insert immediately after the profiled/pipelined train step and before optimizer bookkeeping.
+          $stepNeedle = @'
+                  .map_err(|e| e.to_string())?;
+              }
+              if is_optimizer_step {
+          '@
+          $stepPos = $text.IndexOf($stepNeedle, $loopStart)
+          if ($stepPos -lt 0) { throw "SFNN post-step marker not found" }
+          $stepNew = @'
+                  .map_err(|e| e.to_string())?;
+              }
+
+              // Diagnostic only: force completion and inspect the BCE output gradient
+              // produced for this exact mini-batch. This changes performance, not math.
+              ctx.synchronize().map_err(|e| e.to_string())?;
+              let diag_loss = runner.read_loss(&ctx).map_err(|e| e.to_string())?;
+              let diag_outputs = runner.forward_workspace.output.download(&ctx).map_err(|e| e.to_string())?;
+              let mut diag_batch_grad_sum = vec![0.0f64; cuda_shape.num_stacks];
+              for sample in 0..fast.layout.batch_size {
+                  let bucket_i32 = buckets[sample];
+                  if bucket_i32 < 0 {
+                      continue;
+                  }
+                  let bucket = bucket_i32 as usize;
+                  if bucket >= cuda_shape.num_stacks {
+                      continue;
+                  }
+                  let grad = diag_loss.mean_output_gradients[sample];
+                  if grad != 0.0 {
+                      diag_grad_nonzero_samples[bucket] = diag_grad_nonzero_samples[bucket].saturating_add(1);
+                      diag_batch_grad_sum[bucket] += f64::from(grad);
+                  } else {
+                      diag_grad_zero_samples[bucket] = diag_grad_zero_samples[bucket].saturating_add(1);
+                      let t = fast.targets[sample];
+                      if t == 0.0 {
+                          diag_zero_target0[bucket] = diag_zero_target0[bucket].saturating_add(1);
+                      } else if t == 1.0 {
+                          diag_zero_target1[bucket] = diag_zero_target1[bucket].saturating_add(1);
+                      } else {
+                          diag_zero_target_mid[bucket] = diag_zero_target_mid[bucket].saturating_add(1);
+                      }
+                      let z = diag_outputs[sample] * output_inv_scale;
+                      diag_zero_z_min[bucket] = diag_zero_z_min[bucket].min(z);
+                      diag_zero_z_max[bucket] = diag_zero_z_max[bucket].max(z);
+                      diag_zero_t_min[bucket] = diag_zero_t_min[bucket].min(t);
+                      diag_zero_t_max[bucket] = diag_zero_t_max[bucket].max(t);
+                  }
+              }
+              for bucket in 0..cuda_shape.num_stacks {
+                  let sum_abs = diag_batch_grad_sum[bucket].abs() as f32;
+                  if sum_abs != 0.0 {
+                      diag_grad_nonzero_batches[bucket] = diag_grad_nonzero_batches[bucket].saturating_add(1);
+                      diag_grad_max_abs_batch_sum[bucket] = diag_grad_max_abs_batch_sum[bucket].max(sum_abs);
+                  }
+              }
+
+              if is_optimizer_step {
+          '@
+          $text = $text.Substring(0, $stepPos) + $stepNew + $text.Substring($stepPos + $stepNeedle.Length)
+
+          $summaryNeedle = @'
+              let diag_total_seen: u64 = diag_bucket_seen.iter().sum();
+          '@
+          $summaryPos = $text.IndexOf($summaryNeedle, $loopStart)
+          if ($summaryPos -lt 0) { throw "SFNN hard-bucket summary marker not found" }
+          $summaryNew = @'
+              let diag_grad_touched =
+                  diag_grad_nonzero_samples.iter().filter(|&&count| count != 0).count();
+              let diag_grad_batch_touched =
+                  diag_grad_nonzero_batches.iter().filter(|&&count| count != 0).count();
+              let diag_grad_nonzero_total: u64 = diag_grad_nonzero_samples.iter().sum();
+              let diag_grad_zero_total: u64 = diag_grad_zero_samples.iter().sum();
+              eprintln!(
+                  "  [SFNN BCE GRAD DIAG] nonzero_samples={} zero_samples={} sample_grad_touched={} nonzero_batch_sum_touched={}",
+                  diag_grad_nonzero_total,
+                  diag_grad_zero_total,
+                  diag_grad_touched,
+                  diag_grad_batch_touched
+              );
+              for bucket in 0..cuda_shape.num_stacks {
+                  let seen = diag_bucket_seen[bucket];
+                  if seen == 0 {
+                      continue;
+                  }
+                  let progress_count = progress_bucket_count.max(1);
+                  let zero = diag_grad_zero_samples[bucket];
+                  if zero == 0 {
+                      eprintln!(
+                          "    [SFNN BCE GRAD DIAG] bucket={:02} base={} progress={} seen={} grad_nz={} grad_zero=0 nz_batches={} max_abs_batch_sum={:.9e}",
+                          bucket,
+                          bucket / progress_count,
+                          bucket % progress_count,
+                          seen,
+                          diag_grad_nonzero_samples[bucket],
+                          diag_grad_nonzero_batches[bucket],
+                          diag_grad_max_abs_batch_sum[bucket]
+                      );
+                  } else {
+                      eprintln!(
+                          "    [SFNN BCE GRAD DIAG] bucket={:02} base={} progress={} seen={} grad_nz={} grad_zero={} nz_batches={} max_abs_batch_sum={:.9e} zero_targets[0={} 1={} mid={}] zero_z=[{:.6},{:.6}] zero_t=[{:.9},{:.9}]",
+                          bucket,
+                          bucket / progress_count,
+                          bucket % progress_count,
+                          seen,
+                          diag_grad_nonzero_samples[bucket],
+                          zero,
+                          diag_grad_nonzero_batches[bucket],
+                          diag_grad_max_abs_batch_sum[bucket],
+                          diag_zero_target0[bucket],
+                          diag_zero_target1[bucket],
+                          diag_zero_target_mid[bucket],
+                          diag_zero_z_min[bucket],
+                          diag_zero_z_max[bucket],
+                          diag_zero_t_min[bucket],
+                          diag_zero_t_max[bucket]
+                      );
+                  }
+              }
+
+              let diag_total_seen: u64 = diag_bucket_seen.iter().sum();
+          '@
+          $text = $text.Substring(0, $summaryPos) + $summaryNew + $text.Substring($summaryPos + $summaryNeedle.Length)
+
+          Set-Content -Path $path -Value $text -Encoding utf8
+
       - name: Replace cc-rs CUDA build with direct nvcc
         shell: pwsh
         run: |
