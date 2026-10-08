@@ -22,12 +22,25 @@ jobs:
           repository: Grampus-ef/yaneuraou-build
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: bulletou
+      - uses: actions/download-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-cublasLt
+          run-id: 37842788231
+          repository: Grampus-ef/yaneuraou-build
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: lt
       - name: Inspect options
         shell: pwsh
         run: |
           Get-ChildItem bulletou | Format-Table Name, Length
           Expand-Archive -Path "bulletou/BulletOu-core.zip" -DestinationPath "extracted" -Force
-          Get-ChildItem extracted -Recurse -File | Select-Object FullName,Length
+          Get-ChildItem lt -Recurse -File | Select-Object FullName,Length
+          $ltzip = (Get-ChildItem lt -Recurse -Filter "*.zip" | Select-Object -First 1).FullName
+          if ($ltzip) { Expand-Archive -Path $ltzip -DestinationPath "lt-expanded" -Force; $lt = (Get-ChildItem lt-expanded -Recurse -Filter "cublasLt64_12.dll" | Select-Object -First 1).FullName }
+          else { $lt = (Get-ChildItem lt -Recurse -Filter "cublasLt64_12.dll" | Select-Object -First 1).FullName }
+          if (-not $lt) { throw "cublasLt DLL not found" }
+          Copy-Item $lt extracted -Force
+          Get-ChildItem extracted -File | Select-Object Name,Length
           $exe = (Get-ChildItem extracted -Recurse -Filter bulletou.exe | Select-Object -First 1).FullName
           Write-Host "EXE: $exe"
           & $exe bucket-stats --help > bucket-stats-help.txt 2>&1
