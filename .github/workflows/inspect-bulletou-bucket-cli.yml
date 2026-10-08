@@ -26,10 +26,11 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem bulletou | Format-Table Name, Length
-          & .\bulletou\bulletou.exe bucket-stats --help *> bucket-stats-help.txt
+          Expand-Archive -Path "bulletou/BulletOu-core.zip" -DestinationPath "extracted" -Force
+          & .\extracted\bulletou.exe bucket-stats --help *> bucket-stats-help.txt
           if ($LASTEXITCODE -ne 0) { Get-Content bucket-stats-help.txt; throw "bucket-stats help failed" }
           Get-Content bucket-stats-help.txt
-          & .\bulletou\bulletou.exe bucket-count --help *> bucket-count-help.txt
+          & .\extracted\bulletou.exe bucket-count --help *> bucket-count-help.txt
           Get-Content bucket-count-help.txt
       - uses: actions/upload-artifact@v4
         with:
