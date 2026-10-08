@@ -72,8 +72,7 @@ int main(int argc,char**argv){
         uint32_t ver=read_u32(f), hash=read_u32(f), alen=read_u32(f);
         if(ver!=NNUE_VERSION) throw runtime_error("unexpected NNUE version");
         string arch(alen,'\0'); f.read(arch.data(),alen); if(!f) throw runtime_error("header truncated");
-        if(arch.find("SFNN_HALFKA2_1024_7_64_K3K3_PROGRESS8")==string::npos || arch.find("LayerStack=72")==string::npos)
-            throw runtime_error("this importer only accepts SFNN_halfka2_1024_7_64_k3k3_progress8 (72 stacks)");
+        // H1=8 architecture is validated by the exact header comparison below.
         if(hash!=0x3c203b32 || arch!="ModelType=SFNNWithoutPsqt;Features=HalfKA2(Friend)[131949->1024x2],Network=SFNN_HALFKA2_1024_8_64_K3K3_PROGRESS8{LayerStack=72}") throw runtime_error("incorrect architecture or main hash: "+arch);
         uint32_t fthash=read_u32(f); if(fthash!=0x5f134ab8) throw runtime_error("FT hash mismatch");
         LebBlock l0b=read_leb_block(f), l0w=read_leb_block(f);
@@ -93,7 +92,7 @@ int main(int argc,char**argv){
         vector<float> l3b; l3b.reserve(STACKS);
         vector<float> l3w; l3w.reserve(STACKS*L3_IN);
         for(size_t st=0;st<STACKS;st++) {
-            (void)read_u32(f);
+            const uint32_t nh=read_u32(f); if(nh!=0x6333718a) throw runtime_error("invalid network hash at bucket "+to_string(st));
             for(size_t i=0;i<L1_OUT;i++){ int32_t q=read_i32(f); l1b.push_back(float(q)/BIAS_SCALE); }
             for(size_t i=0;i<L1_OUT*FT_SIZE;i++){ int8_t q; f.read((char*)&q,1); l1w.push_back(float(q)/QB); }
             for(size_t i=0;i<L2_SIZE;i++){ int32_t q=read_i32(f); l2b.push_back(float(q)/BIAS_SCALE); }
