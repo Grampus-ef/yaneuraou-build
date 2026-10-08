@@ -17,7 +17,7 @@ static constexpr uint32_t NNUE_VERSION = 0x7AF32F16;
 static constexpr size_t INPUT_SIZE = 131949;
 static constexpr size_t FT_SIZE = 1024;
 static constexpr size_t L1_OUT = 8;
-static constexpr size_t L2_IN = 14;
+static constexpr size_t L2_IN = 16; // H1=8 x 2
 static constexpr size_t L2_PAD = 32;
 static constexpr size_t L2_SIZE = 64;
 static constexpr size_t L3_IN = 64;
