@@ -1,0 +1,39 @@
+name: Inspect BulletOu Bucket Stats CLI
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/inspect-bulletou-bucket-cli.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  help:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-core
+          run-id: 37842788231
+          repository: Grampus-ef/yaneuraou-build
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: bulletou
+      - name: Inspect options
+        shell: pwsh
+        run: |
+          Get-ChildItem bulletou | Format-Table Name, Length
+          & .\bulletou\bulletou.exe bucket-stats --help *> bucket-stats-help.txt
+          if ($LASTEXITCODE -ne 0) { Get-Content bucket-stats-help.txt; throw "bucket-stats help failed" }
+          Get-Content bucket-stats-help.txt
+          & .\bulletou\bulletou.exe bucket-count --help *> bucket-count-help.txt
+          Get-Content bucket-count-help.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu_Bucket_Stats_Help
+          path: |
+            bucket-stats-help.txt
+            bucket-count-help.txt
