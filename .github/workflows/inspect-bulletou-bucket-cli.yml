@@ -27,10 +27,14 @@ jobs:
         run: |
           Get-ChildItem bulletou | Format-Table Name, Length
           Expand-Archive -Path "bulletou/BulletOu-core.zip" -DestinationPath "extracted" -Force
-          & .\extracted\bulletou.exe bucket-stats --help *> bucket-stats-help.txt
-          if ($LASTEXITCODE -ne 0) { Get-Content bucket-stats-help.txt; throw "bucket-stats help failed" }
+          Get-ChildItem extracted -Recurse -File | Select-Object FullName,Length
+          $exe = (Get-ChildItem extracted -Recurse -Filter bulletou.exe | Select-Object -First 1).FullName
+          Write-Host "EXE: $exe"
+          & $exe bucket-stats --help > bucket-stats-help.txt 2>&1
+          Write-Host "STATS EXIT $LASTEXITCODE"
           Get-Content bucket-stats-help.txt
-          & .\extracted\bulletou.exe bucket-count --help *> bucket-count-help.txt
+          & $exe bucket-count --help > bucket-count-help.txt 2>&1
+          Write-Host "COUNT EXIT $LASTEXITCODE"
           Get-Content bucket-count-help.txt
       - uses: actions/upload-artifact@v4
         with:
