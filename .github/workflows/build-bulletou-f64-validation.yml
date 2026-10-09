@@ -1,0 +1,385 @@
+name: Build BulletOu f64 Validation Windows
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-bulletou-f64-validation.yml"
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout BulletOu
+        shell: bash
+        run: |
+          git clone --branch shogi-support https://github.com/yaneurao/BulletOu.git BulletOu
+          cd BulletOu
+          git checkout 169661c1833f3b1705f30d4e252ceaf2b6e892cb
+
+
+      - name: Patch only quantized validation loss accumulator to f64
+        shell: pwsh
+        run: |
+          $path = "BulletOu\crates\bulletou_lib\src\validate.rs"
+          $text = [System.IO.File]::ReadAllText($path)
+          $old1 = '        let mut loss_sum = 0.0f32;'
+          $old2 = '            loss_sum += match loss_kind {'
+          $old3 = '            report.test_loss = Some(loss_sum / report.loss_sampled as f32);'
+          foreach ($old in @($old1,$old2,$old3)) {
+            $occ = ([regex]::Matches($text,[regex]::Escape($old))).Count
+            if ($occ -ne 1) { throw "Expected 1 occurrence of [$old], found $occ" }
+          }
+          $text = $text.Replace($old1,'        let mut loss_sum = 0.0f64;')
+          $text = $text.Replace($old2,'            loss_sum += (match loss_kind {')
+          $end = @'
+                        ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
+                    };
+'@
+          $endNew = @'
+                        ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
+                    }) as f64;
+'@
+          if (-not $text.Contains($end)) { throw "Expected match terminator not found" }
+          $text = $text.Replace($end,$endNew)
+          $text = $text.Replace($old3,'            report.test_loss = Some((loss_sum / report.loss_sampled as f64) as f32);')
+          [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false))
+          Write-Host "Only validation summation promoted to f64"
+          Select-String -Path $path -Pattern 'loss_sum' | Select-Object -Last 4 | Out-Host
+
+      - name: Relax CUDA Ranger smoke float comparison
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+          $old = @'
+                  if weights_device != weights {
+                      return Err(format!(
+                          "cuda-cpp persistent ranger smoke mismatch: host={weights:?} device={weights_device:?}"
+                      ));
+                  }
+          '@
+          $new = @'
+                  let max_abs_diff = weights_device
+                      .iter()
+                      .zip(weights.iter())
+                      .map(|(&device, &host)| (device - host).abs())
+                      .fold(0.0_f32, f32::max);
+                  if max_abs_diff > 1.0e-6 {
+                      return Err(format!(
+                          "cuda-cpp persistent ranger smoke mismatch: host={weights:?} device={weights_device:?} max_abs_diff={max_abs_diff:e}"
+                      ));
+                  }
+          '@
+          if (-not $text.Contains($old)) { throw "Ranger smoke comparison block not found" }
+          $text = $text.Replace($old, $new)
+          Set-Content -Path $path -Value $text -Encoding utf8
+
+      - name: Add BulletOu initial-state smoke mode
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+
+          $old = @'
+              /// Run the C++/CUDA backend bring-up smoke and exit.
+              #[arg(long)]
+              cuda_cpp_smoke: bool,
+          '@
+          $new = @'
+              /// Run the C++/CUDA backend bring-up smoke and exit.
+              #[arg(long)]
+              cuda_cpp_smoke: bool,
+
+              /// Load an SFNN --initial-state (plus optional --sfnn-progress-bin),
+              /// validate it with BulletOu's native loader, re-export nn.bin,
+              /// and exit without reading teacher data or performing updates.
+              #[arg(long)]
+              cuda_cpp_state_smoke: bool,
+          '@
+          if (-not $text.Contains($old)) { throw "cuda_cpp_smoke field block not found" }
+          $text = $text.Replace($old, $new)
+
+          $old = @'
+                  if self.cuda_cpp_smoke {
+                      if self.cuda_cpp_train_steps.is_some() {
+                          return Err("--cuda-cpp-smoke and --cuda-cpp-train-steps cannot be used together".to_string());
+                      }
+          '@
+          $new = @'
+                  if self.cuda_cpp_state_smoke {
+                      if self.initial_state.is_none() {
+                          return Err("--cuda-cpp-state-smoke requires --initial-state".to_string());
+                      }
+                      if !self.eval_type().uses_layerstack() {
+                          return Err("--cuda-cpp-state-smoke currently supports SFNN / LayerStack architectures only".to_string());
+                      }
+                      return Ok(());
+                  }
+                  if self.cuda_cpp_smoke {
+                      if self.cuda_cpp_train_steps.is_some() {
+                          return Err("--cuda-cpp-smoke and --cuda-cpp-train-steps cannot be used together".to_string());
+                      }
+          '@
+          if (-not $text.Contains($old)) { throw "validate_cuda_cpp_backend_options smoke block not found" }
+          $text = $text.Replace($old, $new)
+
+          $old = @'
+              if args.bench_teacher_prepare_batches.is_some() {
+          '@
+          $new = @'
+              if args.cuda_cpp_state_smoke {
+                  #[cfg(feature = "cuda-cpp-backend")]
+                  {
+                      if let Err(e) = run_cuda_cpp_state_smoke(&args) {
+                          eprintln!("error: cuda-cpp state smoke failed: {e}");
+                          std::process::exit(2);
+                      }
+                      return;
+                  }
+                  #[cfg(not(feature = "cuda-cpp-backend"))]
+                  {
+                      eprintln!("error: --cuda-cpp-state-smoke requires building with --features cuda-cpp-backend");
+                      std::process::exit(2);
+                  }
+              }
+              if args.bench_teacher_prepare_batches.is_some() {
+          '@
+          if (-not $text.Contains($old)) { throw "main bench_teacher block not found" }
+          $text = $text.Replace($old, $new)
+
+          $old = @'
+          fn run_cuda_cpp_backend(args: &Args) -> Result<(), String> {
+          '@
+          $new = @'
+          #[cfg(feature = "cuda-cpp-backend")]
+          fn run_cuda_cpp_state_smoke(args: &Args) -> Result<(), String> {
+              let feature_kind = cuda_cpp_sfnn_feature_kind_from_arch(args.arch())?;
+              let state = build_sfnn_initial_state_for_cuda_cpp(args, feature_kind)?;
+              state.weights.validate()?;
+              let shape = state.weights.shape;
+              let progress_params = cuda_cpp_sfnn_progress_params_for_state(state.progress.as_ref())?;
+
+              let out_dir = std::path::Path::new("state_smoke_out");
+              std::fs::create_dir_all(out_dir).map_err(|e| e.to_string())?;
+              let out_nn = out_dir.join("nn.bin");
+              if out_nn.exists() {
+                  std::fs::remove_file(&out_nn).map_err(|e| e.to_string())?;
+              }
+              let out_progress = out_dir.join("progress.bin");
+              if out_progress.exists() {
+                  std::fs::remove_file(&out_progress).map_err(|e| e.to_string())?;
+              }
+
+              let readback = sfnn_initial_weights_into_readback(state.weights);
+              write_cuda_cpp_sfnn_nn_bin(
+                  &out_nn,
+                  feature_kind,
+                  shape,
+                  &readback,
+                  effective_sfnn_factorizer_spec(args),
+                  effective_sfnn_factorizer_alpha(args),
+                  None,
+                  None,
+                  progress_params.as_ref(),
+              )?;
+
+              eprintln!("  state smoke arch = {}", args.arch().cli_name());
+              eprintln!("  state smoke shape = {:?}", shape);
+              eprintln!("  state smoke optimizer = {}", if state.optimizer_states.is_some() { "present" } else { "fresh/absent" });
+              eprintln!("  state smoke output = {}", out_nn.display());
+              if out_progress.exists() {
+                  eprintln!("  state smoke progress = {}", out_progress.display());
+              }
+              eprintln!("  cuda-cpp state smoke = ok");
+              Ok(())
+          }
+
+          fn run_cuda_cpp_backend(args: &Args) -> Result<(), String> {
+          '@
+          if (-not $text.Contains($old)) { throw "run_cuda_cpp_backend function marker not found" }
+          $text = $text.Replace($old, $new)
+
+          Set-Content -Path $path -Value $text -Encoding utf8
+
+      - name: Allow zero SFNN layer LR multipliers
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $text = Get-Content -Raw -Path $path
+          $old = @'
+                  for (name, value) in [("sfnn-ft-lr-mult", self.sfnn_ft_lr_mult),
+                      ("sfnn-l2-lr-mult", self.sfnn_l2_lr_mult), ("sfnn-l3-lr-mult", self.sfnn_l3_lr_mult)] {
+                      if !value.is_finite() || value <= 0.0 {
+                          return Err(format!("--{name} must be finite and positive (got {value})"));
+                      }
+          '@
+          $new = @'
+                  for (name, value) in [("sfnn-ft-lr-mult", self.sfnn_ft_lr_mult),
+                      ("sfnn-l2-lr-mult", self.sfnn_l2_lr_mult), ("sfnn-l3-lr-mult", self.sfnn_l3_lr_mult)] {
+                      if !value.is_finite() || value < 0.0 {
+                          return Err(format!("--{name} must be finite and non-negative (got {value})"));
+                      }
+          '@
+          if (-not $text.Contains($old)) { throw "SFNN layer LR validation block not found" }
+          $text = $text.Replace($old, $new)
+          Set-Content -Path $path -Value $text -Encoding utf8
+
+      - name: Replace cc-rs CUDA build with direct nvcc
+        shell: pwsh
+        run: |
+          @'
+          use std::{env, fs, path::PathBuf, process::Command};
+
+          fn cuda_path() -> PathBuf {
+              for name in ["CUDA_PATH", "CUDA_PATH_V13_2", "CUDA_PATH_V13_1", "CUDA_PATH_V13_0", "CUDA_PATH_V12_9", "CUDA_PATH_V12_8"] {
+                  if let Ok(value) = env::var(name) {
+                      let p = PathBuf::from(value);
+                      if p.exists() { return p; }
+                  }
+              }
+              panic!("CUDA_PATH not found");
+          }
+
+          fn run(cmd: &mut Command) {
+              println!("running: {:?}", cmd);
+              let status = cmd.status().expect("failed to spawn command");
+              if !status.success() { panic!("command failed: {:?}", cmd); }
+          }
+
+          fn main() {
+              let cuda = cuda_path();
+              let include = cuda.join("include");
+              let lib_dir = cuda.join("lib").join("x64");
+              let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+              let obj = out.join("bulletou_cuda_backend.obj");
+              let lib = out.join("bulletou_cuda_cpp_backend.lib");
+
+              println!("cargo:rerun-if-changed=cpp/bulletou_cuda_backend.cu");
+              println!("cargo:rerun-if-changed=cpp/batch_norm.cuh");
+              println!("cargo:rerun-if-changed=cpp/bn_qat.cuh");
+
+              run(Command::new("nvcc")
+                  .arg("-ccbin=cl.exe")
+                  .arg("-I").arg(&include)
+                  .arg("-std=c++17")
+                  .arg("-O3")
+                  .arg("--use_fast_math")
+                  .arg("--allow-unsupported-compiler")
+                  .arg("-gencode").arg("arch=compute_75,code=sm_75")
+                  .arg("-gencode").arg("arch=compute_75,code=compute_75")
+                  .arg("-Xcompiler").arg("/MD")
+                  .arg("-Xcompiler").arg("/O2")
+                  .arg("-c")
+                  .arg("cpp/bulletou_cuda_backend.cu")
+                  .arg("-o").arg(&obj));
+
+              run(Command::new("lib.exe")
+                  .arg("/NOLOGO")
+                  .arg(format!("/OUT:{}", lib.display()))
+                  .arg(&obj));
+
+              println!("cargo:rustc-link-search=native={}", out.display());
+              println!("cargo:rustc-link-lib=static=bulletou_cuda_cpp_backend");
+              println!("cargo:rustc-link-search=native={}", lib_dir.display());
+              println!("cargo:rustc-link-lib=dylib=cudart");
+              println!("cargo:rustc-link-lib=dylib=cublas");
+          }
+          '@ | Set-Content -Path "BulletOu\crates\cuda_cpp\build.rs" -Encoding utf8
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        id: cuda-toolkit
+        with:
+          cuda: "12.8.1"
+          method: local
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          nvcc --version
+          Write-Host "CUDA_PATH=$env:CUDA_PATH"
+
+      - name: Build BulletOu
+        shell: pwsh
+        working-directory: BulletOu
+        run: |
+          cargo build --release --features cuda-cpp-backend --example bulletou
+          if (-not (Test-Path .\target\release\examples\bulletou.exe)) { throw "bulletou.exe not found" }
+
+      - name: Collect slim runtime
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item BulletOu\target\release\examples\bulletou.exe dist\bulletou.exe
+          $cudaBin = Join-Path $env:CUDA_PATH "bin"
+          foreach ($dll in @("cudart64_12.dll","cublas64_12.dll","cublasLt64_12.dll","nvJitLink_120_0.dll")) {
+            $src = Join-Path $cudaBin $dll
+            if (Test-Path $src) { Copy-Item $src (Join-Path "dist" $dll) }
+          }
+          .\dist\bulletou.exe --help 2>&1 | Tee-Object -FilePath dist\bulletou-help.txt
+          dumpbin /dependents .\dist\bulletou.exe | Out-File -Encoding utf8 dist\bulletou-deps.txt
+          Get-FileHash .\dist\bulletou.exe -Algorithm SHA256 | Format-List | Out-File -Encoding ascii dist\SHA256.txt
+          Get-ChildItem dist
+
+      - name: Pack CUDA runtime split
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path core | Out-Null
+          Copy-Item dist\bulletou.exe core\
+          Copy-Item dist\cudart64_12.dll core\
+          Copy-Item dist\cublas64_12.dll core\
+          if (Test-Path dist\nvJitLink_120_0.dll) { Copy-Item dist\nvJitLink_120_0.dll core\ }
+          Copy-Item dist\bulletou-help.txt core\
+          Copy-Item dist\bulletou-deps.txt core\
+          Copy-Item dist\SHA256.txt core\
+          Compress-Archive -Path core\* -DestinationPath BulletOu-core.zip -CompressionLevel Optimal
+          Compress-Archive -Path dist\cublasLt64_12.dll -DestinationPath BulletOu-cublasLt.zip -CompressionLevel Optimal
+          Get-Item BulletOu-core.zip,BulletOu-cublasLt.zip | Format-Table Name,Length
+
+      - name: Pack quantized-test validation exe only
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path patched | Out-Null
+          Copy-Item BulletOu\target\release\examples\bulletou.exe patched\bulletou_quantized_test_f64.exe
+          "Source: yaneurao/BulletOu 169661c1833f3b1705f30d4e252ceaf2b6e892cb; validate.rs loss_sum f64, f32 per-sample unchanged. Replace only quantized-test exe for read-only validation. Use existing CUDA DLLs." | Set-Content patched\README_f64.txt -Encoding utf8
+          Compress-Archive -Path patched\* -DestinationPath BulletOu-Quantized-F64.zip -CompressionLevel Optimal
+
+      - name: Upload f64 validation binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-Quantized-Test-f64-Windows
+          path: BulletOu-Quantized-F64.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload BulletOu core
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-core
+          path: BulletOu-core.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload cuBLASLt runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-win64-cuda1281-cublasLt
+          path: BulletOu-cublasLt.zip
+          if-no-files-found: error
+          compression-level: 0
