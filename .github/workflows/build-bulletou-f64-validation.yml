@@ -31,21 +31,18 @@ jobs:
           $old1 = 'let mut loss_sum = 0.0f32;'
           $old2 = 'loss_sum += match loss_kind {'
           $old3 = 'report.test_loss = Some(loss_sum / report.loss_sampled as f32);'
-          $end = @'
-                ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
-            };
-          '@
-          $endNew = @'
-                ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
-            }) as f64;
-          '@
-          foreach ($old in @($old1,$old2,$old3,$end)) {
+          foreach ($old in @($old1,$old2,$old3)) {
             $occ = ([regex]::Matches($text,[regex]::Escape($old))).Count
             if ($occ -ne 2) { throw "Expected 2 occurrences of [$old], found $occ" }
           }
+          $pat = '(ValidationLossKind::WinRateModel \\{ pow_exp, \\.\\. \\} => diff\\.abs\\(\\)\\.powf\\(pow_exp\\),\\r?\\n[ \\t]*)\\};'
+          # regex must not depend on indentation or line-ending conventions
+          $pat = $pat.Replace('\\\\','\\')
+          $hits = ([regex]::Matches($text,$pat)).Count
+          if ($hits -ne 2) { throw "Expected 2 validation match endings, got $hits" }
           $text = $text.Replace($old1,'let mut loss_sum = 0.0f64;')
           $text = $text.Replace($old2,'loss_sum += (match loss_kind {')
-          $text = $text.Replace($end,$endNew)
+          $text = [regex]::Replace($text,$pat,'$1}) as f64;')
           $text = $text.Replace($old3,'report.test_loss = Some((loss_sum / report.loss_sampled as f64) as f32);')
           [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false))
           Write-Host "Only validation summation promoted to f64"
