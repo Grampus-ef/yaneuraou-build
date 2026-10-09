@@ -28,21 +28,21 @@ jobs:
         run: |
           $path = "BulletOu\crates\bulletou_lib\src\validate.rs"
           $text = [System.IO.File]::ReadAllText($path)
+          # Normalize checkout CRLF so exact-patch contract is portable.
+          $text = $text.Replace("`r`n","`n")
           $old1 = 'let mut loss_sum = 0.0f32;'
           $old2 = 'loss_sum += match loss_kind {'
           $old3 = 'report.test_loss = Some(loss_sum / report.loss_sampled as f32);'
-          foreach ($old in @($old1,$old2,$old3)) {
+          $endLine = '                ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),'
+          $oldEnd = $endLine + "`n            };"
+          $newEnd = $endLine + "`n            }) as f64;"
+          foreach ($old in @($old1,$old2,$old3,$oldEnd)) {
             $occ = ([regex]::Matches($text,[regex]::Escape($old))).Count
             if ($occ -ne 2) { throw "Expected 2 occurrences of [$old], found $occ" }
           }
-          $pat = '(ValidationLossKind::WinRateModel \\{ pow_exp, \\.\\. \\} => diff\\.abs\\(\\)\\.powf\\(pow_exp\\),\\r?\\n[ \\t]*)\\};'
-          # regex must not depend on indentation or line-ending conventions
-          $pat = $pat.Replace('\\\\','\\')
-          $hits = ([regex]::Matches($text,$pat)).Count
-          if ($hits -ne 2) { throw "Expected 2 validation match endings, got $hits" }
           $text = $text.Replace($old1,'let mut loss_sum = 0.0f64;')
           $text = $text.Replace($old2,'loss_sum += (match loss_kind {')
-          $text = [regex]::Replace($text,$pat,'$1}) as f64;')
+          $text = $text.Replace($oldEnd,$newEnd)
           $text = $text.Replace($old3,'report.test_loss = Some((loss_sum / report.loss_sampled as f64) as f32);')
           [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false))
           Write-Host "Only validation summation promoted to f64"
