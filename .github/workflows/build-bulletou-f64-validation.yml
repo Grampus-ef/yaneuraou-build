@@ -38,13 +38,13 @@ jobs:
           $text = $text.Replace($old1,'        let mut loss_sum = 0.0f64;')
           $text = $text.Replace($old2,'            loss_sum += (match loss_kind {')
           $end = @'
-                        ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
-                    };
-'@
+                ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
+            };
+          '@
           $endNew = @'
-                        ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
-                    }) as f64;
-'@
+                ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
+            }) as f64;
+          '@
           if (-not $text.Contains($end)) { throw "Expected match terminator not found" }
           $text = $text.Replace($end,$endNew)
           $text = $text.Replace($old3,'            report.test_loss = Some((loss_sum / report.loss_sampled as f64) as f32);')
