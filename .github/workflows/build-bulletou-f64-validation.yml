@@ -28,8 +28,8 @@ jobs:
         run: |
           $path = "BulletOu\crates\bulletou_lib\src\validate.rs"
           $text = [System.IO.File]::ReadAllText($path)
-          $old1 = '        let mut loss_sum = 0.0f32;'
-          $old2 = '            loss_sum += match loss_kind {'
+          $old1 = 'let mut loss_sum = 0.0f32;'
+          $old2 = 'loss_sum += match loss_kind {'
           $old3 = 'report.test_loss = Some(loss_sum / report.loss_sampled as f32);'
           $end = @'
                 ValidationLossKind::WinRateModel { pow_exp, .. } => diff.abs().powf(pow_exp),
@@ -43,8 +43,8 @@ jobs:
             $occ = ([regex]::Matches($text,[regex]::Escape($old))).Count
             if ($occ -ne 2) { throw "Expected 2 occurrences of [$old], found $occ" }
           }
-          $text = $text.Replace($old1,'        let mut loss_sum = 0.0f64;')
-          $text = $text.Replace($old2,'            loss_sum += (match loss_kind {')
+          $text = $text.Replace($old1,'let mut loss_sum = 0.0f64;')
+          $text = $text.Replace($old2,'loss_sum += (match loss_kind {')
           $text = $text.Replace($end,$endNew)
           $text = $text.Replace($old3,'report.test_loss = Some((loss_sum / report.loss_sampled as f64) as f32);')
           [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false))
