@@ -1,0 +1,37 @@
+name: Build Tuyoura8 Converter Tools Windows
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-tuyoura8-converters.yml"
+      - "tools/nn_to_bulletou_state_h1_8_8.cpp"
+      - "tools/bulletou_state_to_nn_h1_8_8.cpp"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            make
+      - name: Build Windows x64 eight-stack converters
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          clang++ -O2 -std=c++17 -static -static-libgcc -static-libstdc++ tools/nn_to_bulletou_state_h1_8_8.cpp -o nn_to_bulletou_state_h1_8_8.exe
+          clang++ -O2 -std=c++17 -static -static-libgcc -static-libstdc++ tools/bulletou_state_to_nn_h1_8_8.cpp -o bulletou_state_to_nn_h1_8_8.exe
+          test -s nn_to_bulletou_state_h1_8_8.exe
+          test -s bulletou_state_to_nn_h1_8_8.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tuyoura8_H1_8_ConverterTools_win64
+          path: |
+            nn_to_bulletou_state_h1_8_8.exe
+            bulletou_state_to_nn_h1_8_8.exe
+          if-no-files-found: error
