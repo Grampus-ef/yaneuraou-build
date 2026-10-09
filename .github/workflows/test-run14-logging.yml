@@ -1,0 +1,26 @@
+name: Validate RUN14 Windows logging
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-run14-logging.yml"
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - name: Exercise PowerShell 5.1 native stderr capture and exit status
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:TEMP 'run14-native.stdout'
+          $err=Join-Path $env:TEMP 'run14-native.stderr'
+          $log=Join-Path $env:TEMP 'run14-native.log'
+          [IO.File]::WriteAllText($log,'created before launch')
+          $exe=Join-Path $env:SystemRoot 'System32\\cmd.exe'
+          $p=Start-Process -FilePath $exe -ArgumentList '/d /c echo OUTPUT&&echo ERROR 1>&2' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err -ErrorAction Stop
+          Write-Host ("EXIT "+$p.ExitCode)
+          if($p.ExitCode -ne 0){ throw "nonzero exit" }
+          if(-not (Select-String -Path $out -Pattern 'OUTPUT' -Quiet)){ throw 'stdout lost' }
+          if(-not (Select-String -Path $err -Pattern 'ERROR' -Quiet)){ throw 'stderr lost' }
+          if(-not (Test-Path $log)){ throw 'startup log missing' }
+          Write-Host 'PASS: PowerShell5.1 Start-Process with stdout/stderr redirection'
