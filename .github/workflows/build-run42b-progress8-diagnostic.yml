@@ -71,6 +71,21 @@ jobs:
           print('RUN42B direct progress diagnostic inserted')
           PY
 
+      - name: Add required iterator header for clang64
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('upstream/source/numa.h')
+          s = p.read_text(encoding='utf-8-sig')
+          anchor = '#include <algorithm>'
+          assert anchor in s and 'std::inserter(' in s
+          if '#include <iterator>' not in s:
+              s = s.replace(anchor, anchor + '\n#include <iterator>', 1)
+              p.write_text(s, encoding='utf-8-sig')
+          print('Clang64 std::inserter header compatibility check PASS')
+          PY
+
       - name: Install MSYS2 clang64 toolchain
         uses: msys2/setup-msys2@v2
         with:
