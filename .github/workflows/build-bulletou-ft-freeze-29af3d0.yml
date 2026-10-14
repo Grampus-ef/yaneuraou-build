@@ -1,6 +1,9 @@
 name: Build BulletOu FT Freeze 29af3d0 (Windows)
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-bulletou-ft-freeze-29af3d0.yml'
 
 jobs:
   build:
