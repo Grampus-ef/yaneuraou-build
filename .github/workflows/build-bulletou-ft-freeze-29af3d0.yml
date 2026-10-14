@@ -145,6 +145,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "git diff --check failed" }
           git -C BulletOu diff --stat
 
+      - name: Normalize negative float in Clap regression test
+        shell: pwsh
+        run: |
+          $path = "BulletOu\examples\bulletou.rs"
+          $source = [System.IO.File]::ReadAllText($path)
+          $old = '&["--sfnn-ft-lr-mult", "-0.1"]'
+          $new = '&["--sfnn-ft-lr-mult=-0.1"]'
+          $matches = ([regex]::Matches($source, [regex]::Escape($old))).Count
+          if ($matches -ne 1) { throw "Expected one negative FT multiplier test argument, found $matches" }
+          [System.IO.File]::WriteAllText($path, $source.Replace($old, $new), [System.Text.UTF8Encoding]::new($false))
+          git -C BulletOu diff --check
+          if ($LASTEXITCODE -ne 0) { throw "git diff --check failed" }
+
       - name: Replace cc-rs CUDA build with direct nvcc for Windows
         shell: pwsh
         run: |
