@@ -1,0 +1,105 @@
+name: Tanuki WCSC36 × V990 search-only trial
+
+on:
+  push:
+    branches:
+      - experiment/tanuki-wcsc36-v990-search
+    paths:
+      - .github/workflows/tanuki-wcsc36-v990-search.yml
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: windows-2022
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Checkout immutable source revisions
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/nodchip/tanuki-.git tanuki
+          git -C tanuki checkout abccc2ba0fe1cc34e354399f275d27f732dc96e7
+          git clone https://github.com/yaneurao/YaneuraOu.git v990
+          git -C v990 checkout c1b80eaa09fe13d5f12b1599d1ae4d53c224de30
+          git -C tanuki rev-parse HEAD > tanuki-source-commit.txt
+          git -C v990 rev-parse HEAD > v990-source-commit.txt
+
+      - name: Install MSYS2 CLANG64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            make
+            python
+            mingw-w64-clang-x86_64-clang
+
+      - name: Build unmodified WCSC36 baseline
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd tanuki/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536
+          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536 TARGET_CPU=AVX2
+          test -s YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe ../../tanuki_wcsc36_baseline_AVX2.exe
+
+      - name: Introduce only V990 search implementation
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for path in \
+            engine/yaneuraou-engine/yaneuraou-search.cpp \
+            engine/yaneuraou-engine/yaneuraou-search.h \
+            movepick.cpp movepick.h \
+            search.cpp search.h \
+            timeman.cpp timeman.h \
+            tt.cpp tt.h
+          do
+            test -f "v990/source/$path"
+            test -f "tanuki/source/$path"
+            cp "v990/source/$path" "tanuki/source/$path"
+          done
+          git -C tanuki diff --stat > search-only-diff.txt
+          cat search-only-diff.txt
+          # Intentionally do not replace tanuki feature extraction, evaluation,
+          # tanuki_progress, position, thread, engine, USI, or nn.bin.
+          # Failure of compilation means API adaptation is needed, not an Elo result.
+
+      - name: Build WCSC36 with V990 search
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd tanuki/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536
+          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536 TARGET_CPU=AVX2
+          test -s YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe ../../tanuki_wcsc36_V990_search_AVX2.exe
+
+      - name: USI protocol smoke test
+        shell: pwsh
+        run: |
+          "usi`nquit`n" | .\tanuki_wcsc36_baseline_AVX2.exe | Tee-Object -FilePath baseline_usi.txt
+          "usi`nquit`n" | .\tanuki_wcsc36_V990_search_AVX2.exe | Tee-Object -FilePath candidate_usi.txt
+          if (-not (Select-String -Path baseline_usi.txt -Pattern 'usiok' -Quiet)) { throw 'baseline USI failure' }
+          if (-not (Select-String -Path candidate_usi.txt -Pattern 'usiok' -Quiet)) { throw 'candidate USI failure' }
+
+      - name: Upload smoke-tested engines and provenance
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tanuki_WCSC36_V990_SearchOnly_AVX2
+          path: |
+            tanuki_wcsc36_baseline_AVX2.exe
+            tanuki_wcsc36_V990_search_AVX2.exe
+            baseline_usi.txt
+            candidate_usi.txt
+            search-only-diff.txt
+            tanuki/tanuki-source-commit.txt
+            v990/v990-source-commit.txt
+          if-no-files-found: error
