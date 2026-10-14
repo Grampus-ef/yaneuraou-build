@@ -1,0 +1,303 @@
+name: Build BulletOu FT Freeze 29af3d0 (Windows)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout audited BulletOu source
+        shell: pwsh
+        run: |
+          git clone --branch shogi-support --single-branch https://github.com/yaneurao/BulletOu.git BulletOu
+          git -C BulletOu checkout --detach 29af3d083dc42fc9d89047be4071f37a58579ca7
+          if ((git -C BulletOu rev-parse HEAD).Trim() -ne "29af3d083dc42fc9d89047be4071f37a58579ca7") {
+            throw "Unexpected BulletOu commit"
+          }
+
+      - name: Apply audited FT-freeze patch (embedded; no extra repository file required)
+        shell: pwsh
+        run: |
+          $encoded = @'
+          RnJvbSA2NjcwMGEwYzkwY2M3MjlkZGUxYjQwYWQyZmZhN2Y5MDlkZTdmNTZiIE1vbiBTZXAgMTcgMDA6MDA6MDAg
+          MjAwMQpGcm9tOiBDbGF1ZGUgPG5vcmVwbHlAYW50aHJvcGljLmNvbT4KRGF0ZTogV2VkLCAxNCBPY3QgMjAyNiAy
+          MzoxODoyMiArMDkwMApTdWJqZWN0OiBbUEFUQ0hdIFNGTk46IGFsbG93IGZyZWV6aW5nIEZUIGFsb25lIGFuZCBr
+          ZWVwIGZyb3plbiBzdGFja2VkIGdyb3VwcwogdW50b3VjaGVkCgotLXNmbm4tZnQtbHItbXVsdCByZWplY3RlZCAw
+          LCBzbyBGVCBjb3VsZCBvbmx5IGJlIGZyb3plbiB0b2dldGhlciB3aXRoIEwxCnZpYSAtLXNmbm4tdXBkYXRlLXNj
+          b3BlLiBBY2NlcHQgMCBmb3IgRlQgb25seSwgYW5kIHJlamVjdCBjb21iaW5hdGlvbnMgdGhhdAp3b3VsZCBzdGls
+          bCBjaGFuZ2UgdGhlIGVmZmVjdGl2ZSBGVCAoQk4gb24gRlQgLyBCTiBRQVQsIEZUIHJldml2YWwsIEZUCnNhdHVy
+          YXRpb24gcGVuYWx0eSkuCgpXaXRoIC0tc2Zubi1kaXJ0eS1idWNrZXQtdXBkYXRlLCBhIHN0YWNrZWQgZ3JvdXAg
+          d2l0aCBMUiBtdWx0aXBsaWVyIDAgc3RpbGwKcmFuIFJhbmdlciB3aXRoIExSIDAsIHNvIHdlaWdodCBjbGlwcGlu
+          ZywgTG9va2FoZWFkIGFuZCBtb21lbnQgdXBkYXRlcyBjb3VsZApjaGFuZ2UgYSBmcm96ZW4gTDEvTDIvTDMgZ3Jv
+          dXAuIFNob3J0LWNpcmN1aXQgaXQgbGlrZSB0aGUgbm9uLXN0YWNrZWQgcGF0aC4KCkNvLUF1dGhvcmVkLUJ5OiBD
+          bGF1ZGUgT3B1cyA1LjUgPG5vcmVwbHlAYW50aHJvcGljLmNvbT4KQ2xhdWRlLVNlc3Npb246IGh0dHBzOi8vY2xh
+          dWRlLmFpL2NvZGUvc2Vzc2lvbl8wMU42dk1HUFM0ZHpENXlXcnVIQVQ3RkgKLS0tCiBjcmF0ZXMvY3VkYV9jcHAv
+          c3JjL2xpYi5ycyB8IDI4ICsrKysrKysrKysrKysrKysrKysrKysrKysrKysKIGV4YW1wbGVzL2J1bGxldG91LnJz
+          ICAgICAgIHwgMzcgKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrLQogMiBmaWxlcyBjaGFuZ2Vk
+          LCA2NCBpbnNlcnRpb25zKCspLCAxIGRlbGV0aW9uKC0pCgpkaWZmIC0tZ2l0IGEvY3JhdGVzL2N1ZGFfY3BwL3Ny
+          Yy9saWIucnMgYi9jcmF0ZXMvY3VkYV9jcHAvc3JjL2xpYi5ycwppbmRleCBlOWJkYWYwYi4uYzAyMGJmZjAgMTAw
+          NjQ0Ci0tLSBhL2NyYXRlcy9jdWRhX2NwcC9zcmMvbGliLnJzCisrKyBiL2NyYXRlcy9jdWRhX2NwcC9zcmMvbGli
+          LnJzCkBAIC04NTk0LDYgKzg1OTQsMTEgQEAgZm4gdXBkYXRlX3N0YWNrZWRfcGFyYW1fZ3JvdXBfd2l0aF9scl9t
+          dWx0aXBsaWVyKAogICAgIGlmICEobHJfbXVsdGlwbGllci5pc19maW5pdGUoKSAmJiBscl9tdWx0aXBsaWVyID49
+          IDAuMCkgewogICAgICAgICByZXR1cm4gRXJyKEN1ZGFDcHBFcnJvcjo6bWVzc2FnZSgiU0ZOTiBsZWFybmluZy1y
+          YXRlIG11bHRpcGxpZXIgbXVzdCBiZSBmaW5pdGUgYW5kIG5vbi1uZWdhdGl2ZSIpKTsKICAgICB9CisgICAgLy8g
+          QSBmcm96ZW4gZ3JvdXAgbXVzdCBub3QgcmVhY2ggUmFuZ2VyIGV2ZW4gb24gdGhlIGRpcnR5LWJ1Y2tldCBwYXRo
+          OiB3aXRoIExSIDAKKyAgICAvLyB0aGUga2VybmVscyB3b3VsZCBzdGlsbCBjbGlwIHdlaWdodHMsIGFwcGx5IExv
+          b2thaGVhZCBhbmQgYWR2YW5jZSBtb21lbnRzLgorICAgIGlmIGxyX211bHRpcGxpZXIgPT0gMC4wIHsKKyAgICAg
+          ICAgcmV0dXJuIGdyYWRpZW50cy5maWxsKGN0eCwgMC4wKTsKKyAgICB9CiAgICAgbGV0IFNvbWUoKGRpcnR5X2J1
+          Y2tldHMsIGRpcnR5X2NvdW50KSkgPSBkaXJ0eV91cGRhdGUgZWxzZSB7CiAgICAgICAgIHJldHVybiB1cGRhdGVf
+          cGFyYW1fZ3JvdXBfd2l0aF9scl9tdWx0aXBsaWVyKGN0eCwgcGFyYW1zLCBncmFkaWVudHMsIHdlaWdodHMsIHN0
+          YXRlLCBscl9tdWx0aXBsaWVyKTsKICAgICB9OwpAQCAtMTA4NjksNiArMTA4NzQsMjkgQEAgbW9kIHRlc3RzIHsK
+          ICAgICAgICAgYXNzZXJ0X2VxIShsYXlvdXQub3V0cHV0X2xlbigpLCA1KTsKICAgICB9CiAKKyAgICAjW3Rlc3Rd
+          CisgICAgI1tpZ25vcmUgPSAicmVxdWlyZXMgYSBDVURBLWNhcGFibGUgTlZJRElBIEdQVSJdCisgICAgZm4gZnJv
+          emVuX3N0YWNrZWRfZ3JvdXBfaXNfdW50b3VjaGVkX29uX2RpcnR5X2J1Y2tldF9wYXRoKCkgeworICAgICAgICBs
+          ZXQgY3R4ID0gQ29udGV4dDo6bmV3KDApLnVud3JhcCgpOworICAgICAgICAvLyBXZWlnaHRzIG91dHNpZGUgdGhl
+          IHRhdGFyYSBib3VuZCBhbmQgc2xvdyBwYXJhbXMgIT0gd2VpZ2h0czogYW55IFJhbmdlciBjYWxsCisgICAgICAg
+          IC8vIHdpdGggTFIgMCB3b3VsZCBjbGlwIHRoZW0gb3IgcHVsbCB0aGVtIHRvd2FyZCBzbG93IHBhcmFtcy4KKyAg
+          ICAgICAgbGV0IHcwID0gWzIuNWYzMiwgLTMuMCwgMC41LCAwLjI1XTsKKyAgICAgICAgbGV0IHdlaWdodHMgPSBG
+          MzJCdWZmZXI6OmZyb21faG9zdCgmY3R4LCAmdzApLnVud3JhcCgpOworICAgICAgICBsZXQgZ3JhZGllbnRzID0g
+          RjMyQnVmZmVyOjpmcm9tX2hvc3QoJmN0eCwgJlsxLjAsIDEuMCwgMS4wLCAxLjBdKS51bndyYXAoKTsKKyAgICAg
+          ICAgbGV0IHN0YXRlID0gUmFuZ2VyUGFyYW1TdGF0ZTo6ZnJvbV9ob3N0X3dlaWdodHMoJmN0eCwgJlswLjAsIDAu
+          MCwgMC4wLCAwLjBdKS51bndyYXAoKTsKKyAgICAgICAgbGV0IGRpcnR5ID0gSTMyQnVmZmVyOjpmcm9tX2hvc3Qo
+          JmN0eCwgJlswLCAxXSkudW53cmFwKCk7CisgICAgICAgIGxldCBtdXQgcGFyYW1zID0gUmFuZ2VyVXBkYXRlUGFy
+          YW1zOjpkZWZhdWx0KCk7CisgICAgICAgIHBhcmFtcy5yYWRhbS5taW5fd2VpZ2h0ID0gLTEyNy4wIC8gNjQuMDsK
+          KyAgICAgICAgcGFyYW1zLnJhZGFtLm1heF93ZWlnaHQgPSAxMjcuMCAvIDY0LjA7CisgICAgICAgIHVwZGF0ZV9z
+          dGFja2VkX3BhcmFtX2dyb3VwX3dpdGhfbHJfbXVsdGlwbGllcigmY3R4LCBwYXJhbXMsICZncmFkaWVudHMsICZ3
+          ZWlnaHRzLCAmc3RhdGUsIDAuMCwgU29tZSgoJmRpcnR5LCAyKSksIDIpCisgICAgICAgICAgICAudW53cmFwKCk7
+          CisgICAgICAgIGFzc2VydF9lcSEod2VpZ2h0cy5kb3dubG9hZCgmY3R4KS51bndyYXAoKSwgdzAudG9fdmVjKCkp
+          OworICAgICAgICBhc3NlcnRfZXEhKHN0YXRlLm1vbWVudHVtLmRvd25sb2FkKCZjdHgpLnVud3JhcCgpLCB2ZWMh
+          WzAuMDsgNF0pOworICAgICAgICBhc3NlcnRfZXEhKHN0YXRlLnZlbG9jaXR5LmRvd25sb2FkKCZjdHgpLnVud3Jh
+          cCgpLCB2ZWMhWzAuMDsgNF0pOworICAgICAgICBhc3NlcnRfZXEhKHN0YXRlLnNsb3dfcGFyYW1zLmRvd25sb2Fk
+          KCZjdHgpLnVud3JhcCgpLCB2ZWMhWzAuMDsgNF0pOworICAgICAgICBhc3NlcnRfZXEhKGdyYWRpZW50cy5kb3du
+          bG9hZCgmY3R4KS51bndyYXAoKSwgdmVjIVswLjA7IDRdKTsKKyAgICB9CisKICAgICAjW3Rlc3RdCiAgICAgZm4g
+          c2Zubl91cGRhdGVfc2NvcGVfc2VsZWN0c19leHBlY3RlZF9wYXJhbWV0ZXJfZ3JvdXBzKCkgewogICAgICAgICBs
+          ZXQgYWxsID0gU2ZubkxheWVyTHJNdWx0aXBsaWVyczo6ZGVmYXVsdCgpOwpkaWZmIC0tZ2l0IGEvZXhhbXBsZXMv
+          YnVsbGV0b3UucnMgYi9leGFtcGxlcy9idWxsZXRvdS5ycwppbmRleCBiMDEwNWI0OC4uMDlkOTgwYjkgMTAwNjQ0
+          Ci0tLSBhL2V4YW1wbGVzL2J1bGxldG91LnJzCisrKyBiL2V4YW1wbGVzL2J1bGxldG91LnJzCkBAIC01OTkwLDkg
+          KzU5OTAsMjQgQEAgaW1wbCBBcmdzIHsKICAgICAgICAgaWYgIShzZWxmLnNmbm5fbDFfbHJfbXVsdC5pc19maW5p
+          dGUoKSAmJiBzZWxmLnNmbm5fbDFfbHJfbXVsdCA+PSAwLjApIHsKICAgICAgICAgICAgIHJldHVybiBFcnIoZm9y
+          bWF0ISgiLS1zZm5uLWwxLWxyLW11bHQgbXVzdCBiZSBmaW5pdGUgYW5kIG5vbi1uZWdhdGl2ZSAoZ290IHt9KSIs
+          IHNlbGYuc2Zubl9sMV9scl9tdWx0KSk7CiAgICAgICAgIH0KKyAgICAgICAgLy8gRlQgYWxvbmUgbWF5IGJlIGZy
+          b3plbiB3aXRoIDAgKEwwIHdlaWdodCtiaWFzIHNraXAgdGhlIG9wdGltaXplciBlbnRpcmVseSkuCisgICAgICAg
+          IGlmICEoc2VsZi5zZm5uX2Z0X2xyX211bHQuaXNfZmluaXRlKCkgJiYgc2VsZi5zZm5uX2Z0X2xyX211bHQgPj0g
+          MC4wKSB7CisgICAgICAgICAgICByZXR1cm4gRXJyKGZvcm1hdCEoIi0tc2Zubi1mdC1sci1tdWx0IG11c3QgYmUg
+          ZmluaXRlIGFuZCBub24tbmVnYXRpdmUgKGdvdCB7fSkiLCBzZWxmLnNmbm5fZnRfbHJfbXVsdCkpOworICAgICAg
+          ICB9CisgICAgICAgIGlmIHNlbGYuc2Zubl9mdF9scl9tdWx0ID09IDAuMCB7CisgICAgICAgICAgICBpZiBzZWxm
+          LnNmbm5fYm5fZnQgfHwgc2VsZi5zZm5uX2JuX3FhdCB7CisgICAgICAgICAgICAgICAgcmV0dXJuIEVycigiLS1z
+          Zm5uLWZ0LWxyLW11bHQgMCBjYW5ub3QgYmUgY29tYmluZWQgd2l0aCAtLXNmbm4tYm4tZnQvLS1zZm5uLWJuLXFh
+          dDogQk4gc3RhdGlzdGljcy9RQVQgd291bGQgc3RpbGwgY2hhbmdlIHRoZSBmb2xkZWQgRlQgb3V0cHV0Ii5pbnRv
+          KCkpOworICAgICAgICAgICAgfQorICAgICAgICAgICAgaWYgc2VsZi5zZm5uX2Z0X3Jldml2ZSB7CisgICAgICAg
+          ICAgICAgICAgcmV0dXJuIEVycigiLS1zZm5uLWZ0LWxyLW11bHQgMCBjYW5ub3QgYmUgY29tYmluZWQgd2l0aCAt
+          LXNmbm4tZnQtcmV2aXZlOiByZXZpdmFsIHJlc2V0cyBGVCB3ZWlnaHRzIi5pbnRvKCkpOworICAgICAgICAgICAg
+          fQorICAgICAgICAgICAgaWYgc2VsZi5zZm5uX2Z0X3NhdHVyYXRpb25fcGVuYWx0eSAhPSAwLjAgeworICAgICAg
+          ICAgICAgICAgIHJldHVybiBFcnIoIi0tc2Zubi1mdC1sci1tdWx0IDAgY2Fubm90IGJlIGNvbWJpbmVkIHdpdGgg
+          LS1zZm5uLWZ0LXNhdHVyYXRpb24tcGVuYWx0eSIuaW50bygpKTsKKyAgICAgICAgICAgIH0KKyAgICAgICAgfQog
+          ICAgICAgICBmb3IgKG5hbWUsIHZhbHVlKSBpbiBbKCJzZm5uLWZ0LWxyLW11bHQiLCBzZWxmLnNmbm5fZnRfbHJf
+          bXVsdCksCiAgICAgICAgICAgICAoInNmbm4tbDItbHItbXVsdCIsIHNlbGYuc2Zubl9sMl9scl9tdWx0KSwgKCJz
+          Zm5uLWwzLWxyLW11bHQiLCBzZWxmLnNmbm5fbDNfbHJfbXVsdCldIHsKLSAgICAgICAgICAgIGlmICF2YWx1ZS5p
+          c19maW5pdGUoKSB8fCB2YWx1ZSA8PSAwLjAgeworICAgICAgICAgICAgaWYgIXZhbHVlLmlzX2Zpbml0ZSgpIHx8
+          IHZhbHVlIDwgMC4wIHx8ICh2YWx1ZSA9PSAwLjAgJiYgbmFtZSAhPSAic2Zubi1mdC1sci1tdWx0IikgewogICAg
+          ICAgICAgICAgICAgIHJldHVybiBFcnIoZm9ybWF0ISgiLS17bmFtZX0gbXVzdCBiZSBmaW5pdGUgYW5kIHBvc2l0
+          aXZlIChnb3Qge3ZhbHVlfSkiKSk7CiAgICAgICAgICAgICB9CiAgICAgICAgICAgICBpZiB2YWx1ZSAhPSAxLjAg
+          JiYgIWV2YWxfdHlwZS51c2VzX2xheWVyc3RhY2soKSB7CkBAIC0zNTQ3MSw2ICszNTQ4NiwyNiBAQCBtb2QgdGVz
+          dHMgewogICAgICAgICB9CiAgICAgfQogCisgICAgI1t0ZXN0XQorICAgIGZuIHNmbm5fZnRfbHJfbXVsdF96ZXJv
+          X2ZyZWV6ZXNfZnRfb25seSgpIHsKKyAgICAgICAgbGV0IGFyZ3YgPSB8ZXh0cmE6ICZbJnN0cl18IC0+IFZlYzxz
+          dGQ6OmZmaTo6T3NTdHJpbmc+IHsKKyAgICAgICAgICAgIGxldCBtdXQgdjogVmVjPHN0ZDo6ZmZpOjpPc1N0cmlu
+          Zz4gPSBbImJ1bGxldG91IiwgIi0tdGVhY2hlciIsICIvZGV2L251bGwiLCAiLS1hcmNoIiwgIlNGTk5faGFsZmth
+          Ml8xMDI0XzdfNjRfazNrMyIsICItLXN1cGVyYmF0Y2hlcyIsICIxIiwgIi0tbWF4LWVwb2NocyIsICIxIl0ubWFw
+          KEludG86OmludG8pLnRvX3ZlYygpOworICAgICAgICAgICAgdi5leHRlbmQoZXh0cmEuaXRlcigpLm1hcChJbnRv
+          OjppbnRvKSk7CisgICAgICAgICAgICB2CisgICAgICAgIH07CisgICAgICAgIGxldCBmcm96ZW4gPSBBcmdzOjp0
+          cnlfcGFyc2VfZnJvbShhcmd2KCZbIi0tc2Zubi1mdC1sci1tdWx0IiwgIjAiXSkpLnVud3JhcCgpOworICAgICAg
+          ICBhc3NlcnQhKGZyb3plbi52YWxpZGF0ZV9jdWRhX2NwcF9iYWNrZW5kX29wdGlvbnMoKS5pc19vaygpLCAiRlQg
+          TFIgMCBtdXN0IGJlIGFjY2VwdGVkIik7CisgICAgICAgIGxldCBtID0gY3VkYV9jcHBfc2Zubl9sYXllcl9scl9t
+          dWx0aXBsaWVycygmZnJvemVuLCBOb25lKTsKKyAgICAgICAgYXNzZXJ0X2VxIShtLmwwLCAwLjApOworICAgICAg
+          ICBhc3NlcnRfZXEhKG0ubDEsIDEuMCwgImZyZWV6aW5nIEZUIG11c3Qgbm90IGZyZWV6ZSBMMSIpOworICAgICAg
+          ICBhc3NlcnRfZXEhKChtLmwyLCBtLmwzKSwgKDEuMCwgMS4wKSk7CisgICAgICAgIGZvciBiYWQgaW4gWyZbIi0t
+          c2Zubi1mdC1sci1tdWx0IiwgIi0wLjEiXVsuLl0sICZbIi0tc2Zubi1mdC1sci1tdWx0IiwgIjAiLCAiLS1zZm5u
+          LWZ0LXJldml2ZSJdWy4uXSwKKyAgICAgICAgICAgICAgICAgICAgJlsiLS1zZm5uLWZ0LWxyLW11bHQiLCAiMCIs
+          ICItLXNmbm4tYm4tZnQiXVsuLl0sICZbIi0tc2Zubi1sMi1sci1tdWx0IiwgIjAiXVsuLl0sICZbIi0tc2Zubi1s
+          My1sci1tdWx0IiwgIjAiXVsuLl1dIHsKKyAgICAgICAgICAgIGxldCBhID0gQXJnczo6dHJ5X3BhcnNlX2Zyb20o
+          YXJndihiYWQpKS51bndyYXAoKTsKKyAgICAgICAgICAgIGFzc2VydCEoYS52YWxpZGF0ZV9iYWNrZW5kX2ZsYWdz
+          KCkuaXNfZXJyKCksICJtdXN0IHJlamVjdCB7YmFkOj99Iik7CisgICAgICAgIH0KKyAgICB9CisKICAgICAjW3Rl
+          c3RdCiAgICAgZm4gbDFfaW5pdGlhbGl6YXRpb25fY2hvaWNlc19hcmVfaW5kZXBlbmRlbnQoKSB7CiAgICAgICAg
+          IGxldCBhcmd2OiBWZWM8c3RkOjpmZmk6Ok9zU3RyaW5nPiA9IFsiYnVsbGV0b3UiLCAiLS1iYWNrZW5kIiwgImN1
+          ZGEtY3BwIiwgIi0tdGVhY2hlciIsICIvZGV2L251bGwiLAotLSAKMi40My4wCgo=
+          '@
+          $encoded = $encoded -replace '\\s',''
+          $patch = Join-Path $env:RUNNER_TEMP "FT-freeze.patch"
+          [System.IO.File]::WriteAllBytes($patch, [Convert]::FromBase64String($encoded))
+          $hash = (Get-FileHash -Path $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne "5c194d2d77b604fcd6c768423d0f68209e12d12351efe66bf4d61fe8eded0f0a") {
+            throw "FT-freeze patch SHA256 mismatch: $hash"
+          }
+          git -C BulletOu apply --check $patch
+          if ($LASTEXITCODE -ne 0) { throw "git apply --check failed" }
+          git -C BulletOu apply $patch
+          if ($LASTEXITCODE -ne 0) { throw "git apply failed" }
+          git -C BulletOu diff --check
+          if ($LASTEXITCODE -ne 0) { throw "git diff --check failed" }
+          git -C BulletOu diff --stat
+
+      - name: Replace cc-rs CUDA build with direct nvcc for Windows
+        shell: pwsh
+        run: |
+          @'
+          use std::{env, path::PathBuf, process::Command};
+
+          fn cuda_path() -> PathBuf {
+              for name in ["CUDA_PATH", "CUDA_PATH_V13_2", "CUDA_PATH_V13_1", "CUDA_PATH_V13_0", "CUDA_PATH_V12_9", "CUDA_PATH_V12_8"] {
+                  if let Ok(value) = env::var(name) {
+                      let p = PathBuf::from(value);
+                      if p.exists() { return p; }
+                  }
+              }
+              panic!("CUDA_PATH not found");
+          }
+
+          fn run(cmd: &mut Command) {
+              println!("running: {:?}", cmd);
+              let status = cmd.status().expect("failed to spawn command");
+              if !status.success() { panic!("command failed: {:?}", cmd); }
+          }
+
+          fn main() {
+              let cuda = cuda_path();
+              let include = cuda.join("include");
+              let lib_dir = cuda.join("lib").join("x64");
+              let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+              let obj = out.join("bulletou_cuda_backend.obj");
+              let lib = out.join("bulletou_cuda_cpp_backend.lib");
+
+              println!("cargo:rerun-if-changed=cpp/bulletou_cuda_backend.cu");
+              println!("cargo:rerun-if-changed=cpp/batch_norm.cuh");
+              println!("cargo:rerun-if-changed=cpp/bn_qat.cuh");
+
+              run(Command::new("nvcc")
+                  .arg("-ccbin=cl.exe")
+                  .arg("-I").arg(&include)
+                  .arg("-std=c++17")
+                  .arg("-O3")
+                  .arg("--use_fast_math")
+                  .arg("--allow-unsupported-compiler")
+                  .arg("-gencode").arg("arch=compute_75,code=sm_75")
+                  .arg("-gencode").arg("arch=compute_75,code=compute_75")
+                  .arg("-Xcompiler").arg("/MD")
+                  .arg("-Xcompiler").arg("/O2")
+                  .arg("-c")
+                  .arg("cpp/bulletou_cuda_backend.cu")
+                  .arg("-o").arg(&obj));
+
+              run(Command::new("lib.exe")
+                  .arg("/NOLOGO")
+                  .arg(format!("/OUT:{}", lib.display()))
+                  .arg(&obj));
+
+              println!("cargo:rustc-link-search=native={}", out.display());
+              println!("cargo:rustc-link-lib=static=bulletou_cuda_cpp_backend");
+              println!("cargo:rustc-link-search=native={}", lib_dir.display());
+              println!("cargo:rustc-link-lib=dylib=cudart");
+              println!("cargo:rustc-link-lib=dylib=cublas");
+          }
+          '@ | Set-Content -Path "BulletOu\crates\cuda_cpp\build.rs" -Encoding utf8
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: "12.8.1"
+          method: local
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          nvcc --version
+          Write-Host "CUDA_PATH=$env:CUDA_PATH"
+
+      - name: Test FT-freeze CLI behavior (CPU-safe)
+        shell: pwsh
+        working-directory: BulletOu
+        run: |
+          cargo test -p bulletou_lib --features cuda-cpp-backend --example bulletou sfnn_ft_lr_mult_zero_freezes_ft_only -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "FT-freeze CLI regression failed" }
+
+      - name: Compile CUDA dirty-bucket regression test (no GPU on hosted runner)
+        shell: pwsh
+        working-directory: BulletOu
+        run: |
+          cargo test -p bulletou-cuda-cpp frozen_stacked_group_is_untouched_on_dirty_bucket_path --no-run
+          if ($LASTEXITCODE -ne 0) { throw "CUDA regression test compile failed" }
+
+      - name: Build BulletOu
+        shell: pwsh
+        working-directory: BulletOu
+        run: |
+          cargo build --release --features cuda-cpp-backend --example bulletou
+          if ($LASTEXITCODE -ne 0) { throw "BulletOu release build failed" }
+          if (-not (Test-Path .\target\release\examples\bulletou.exe)) { throw "bulletou.exe missing" }
+
+      - name: Collect runtime and provenance
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item BulletOu\target\release\examples\bulletou.exe dist\bulletou.exe
+          $cudaBin = Join-Path $env:CUDA_PATH "bin"
+          foreach ($dll in @("cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll", "nvJitLink_120_0.dll")) {
+            $src = Join-Path $cudaBin $dll
+            if (Test-Path $src) { Copy-Item $src (Join-Path "dist" $dll) }
+          }
+          .\dist\bulletou.exe --help 2>&1 | Out-File -Encoding utf8 dist\bulletou-help.txt
+          if ($LASTEXITCODE -ne 0) { throw "bulletou --help failed" }
+          dumpbin /dependents .\dist\bulletou.exe | Out-File -Encoding utf8 dist\bulletou-deps.txt
+          Get-FileHash .\dist\bulletou.exe -Algorithm SHA256 | Format-List | Out-File -Encoding ascii dist\SHA256.txt
+          @'
+          Upstream: yaneurao/BulletOu
+          Commit: 29af3d083dc42fc9d89047be4071f37a58579ca7
+          Patch: SFNN FT-freeze + dirty-bucket frozen stack regression
+          Patch SHA256: 5c194d2d77b604fcd6c768423d0f68209e12d12351efe66bf4d61fe8eded0f0a
+          Build: windows-2022 / CUDA 12.8.1 / sm_75
+          Validation: CLI regression run; CUDA test compiled but not executed (hosted runner has no NVIDIA GPU)
+          '@ | Set-Content -Path dist\build-provenance.txt -Encoding utf8
+
+      - name: Pack CUDA runtime split (retain legacy artifact layout)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path core | Out-Null
+          foreach ($name in @("bulletou.exe", "cudart64_12.dll", "cublas64_12.dll", "nvJitLink_120_0.dll", "bulletou-help.txt", "bulletou-deps.txt", "SHA256.txt", "build-provenance.txt")) {
+            $src = Join-Path "dist" $name
+            if (Test-Path $src) { Copy-Item $src (Join-Path "core" $name) }
+          }
+          Compress-Archive -Path core\* -DestinationPath BulletOu-FTfreeze-core.zip -CompressionLevel Optimal
+          if (-not (Test-Path dist\cublasLt64_12.dll)) { throw "cublasLt64_12.dll missing" }
+          Compress-Archive -Path dist\cublasLt64_12.dll -DestinationPath BulletOu-FTfreeze-cublasLt.zip -CompressionLevel Optimal
+
+      - name: Upload BulletOu FT-freeze core
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-FTfreeze-29af3d0-win64-core
+          path: BulletOu-FTfreeze-core.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload cuBLASLt runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-FTfreeze-29af3d0-cublasLt
+          path: BulletOu-FTfreeze-cublasLt.zip
+          if-no-files-found: error
+          compression-level: 0
