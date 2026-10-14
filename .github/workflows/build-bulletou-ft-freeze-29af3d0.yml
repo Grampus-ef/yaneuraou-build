@@ -256,7 +256,7 @@ jobs:
         shell: pwsh
         working-directory: BulletOu
         run: |
-          cargo test -p bulletou-cuda-cpp frozen_stacked_group_is_untouched_on_dirty_bucket_path --no-run
+          cargo test -p bulletou-cuda-cpp --lib frozen_stacked_group_is_untouched_on_dirty_bucket_path --no-run
           if ($LASTEXITCODE -ne 0) { throw "CUDA regression test compile failed" }
 
       - name: Build BulletOu
