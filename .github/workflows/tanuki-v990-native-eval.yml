@@ -20,8 +20,9 @@ jobs:
           git -C upstream checkout c1b80eaa09fe13d5f12b1599d1ae4d53c224de30
           git clone https://github.com/nodchip/tanuki-.git tanuki
           git -C tanuki checkout abccc2ba0fe1cc34e354399f275d27f732dc96e7
-          cp tanuki/source/progress.bin progress.bin
-          sha256sum progress.bin > progress_sha256.txt
+          mkdir -p eval
+          cp tanuki/source/progress.bin eval/progress.bin
+          sha256sum eval/progress.bin > progress_sha256.txt
 
       - name: Match WCSC36's HalfKA_hm fingerprint without altering features
         shell: bash
@@ -82,7 +83,7 @@ jobs:
           name: Tanuki_WCSC36_Search_V990_AVX2
           path: |
             tanuki_wcsc36_v990_search_AVX2.exe
-            progress.bin
+            eval/progress.bin
             usi-smoke.txt
             executable_sha256.txt
             progress_sha256.txt
