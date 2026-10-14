@@ -44,8 +44,8 @@ jobs:
         run: |
           set -euxo pipefail
           cd tanuki/source
-          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536
-          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536 TARGET_CPU=AVX2
+          make clean COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536
+          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536 TARGET_CPU=AVX2 EXTRA_CPPFLAGS='-include iterator'
           test -s YaneuraOu-by-gcc.exe
           cp YaneuraOu-by-gcc.exe ../../tanuki_wcsc36_baseline_AVX2.exe
 
@@ -76,8 +76,8 @@ jobs:
         run: |
           set -euxo pipefail
           cd tanuki/source
-          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536
-          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536 TARGET_CPU=AVX2
+          make clean COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536
+          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_NNUE_SFNNwoP1536 TARGET_CPU=AVX2 EXTRA_CPPFLAGS='-include iterator'
           test -s YaneuraOu-by-gcc.exe
           cp YaneuraOu-by-gcc.exe ../../tanuki_wcsc36_V990_search_AVX2.exe
 
