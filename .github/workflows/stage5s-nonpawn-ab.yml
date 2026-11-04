@@ -74,10 +74,10 @@ jobs:
           for name in ('stage5s_src_146', 'stage5s_src_187'):
               p = Path(name)/'source/numa.h'
               b = p.read_bytes()
-              anchor = b'#include <algorithm>\\n'
+              anchor = b'#include <algorithm>\n'
               assert b.count(anchor) == 1, 'Expected unique algorithm include'
               assert b'#include <iterator>' not in b
-              b = b.replace(anchor, anchor + b'#include <iterator>\\n', 1)
+              b = b.replace(anchor, anchor + b'#include <iterator>\n', 1)
               p.write_bytes(b)
               sha.append(hashlib.sha256(b).hexdigest())
           assert sha[0] == sha[1], 'Compatibility headers unexpectedly differ'
