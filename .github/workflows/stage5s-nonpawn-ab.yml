@@ -70,23 +70,27 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import hashlib, json
-          sha = []
-          for name in ('stage5s_src_146', 'stage5s_src_187'):
-              p = Path(name)/'source/numa.h'
-              b = p.read_bytes()
-              anchor = b'#include <algorithm>\n'
-              assert b.count(anchor) == 1, 'Expected unique algorithm include'
-              assert b'#include <iterator>' not in b
-              b = b.replace(anchor, anchor + b'#include <iterator>\n', 1)
-              p.write_bytes(b)
-              sha.append(hashlib.sha256(b).hexdigest())
-          assert sha[0] == sha[1], 'Compatibility headers unexpectedly differ'
+          shas=[]
+          for root in ('stage5s_src_146','stage5s_src_187'):
+              path=Path(root)/'source/numa.h'
+              original=path.read_bytes()
+              lines=original.splitlines(keepends=True)
+              matches=[i for i,line in enumerate(lines) if line.strip()==b'#include <algorithm>']
+              assert len(matches)==1, 'algorithm include not found exactly once'
+              i=matches[0]
+              eol=bytes([13,10]) if lines[i].endswith(bytes([13,10])) else bytes([10])
+              assert b'#include <iterator>' not in original
+              lines.insert(i+1,b'#include <iterator>'+eol)
+              data=b''.join(lines)
+              path.write_bytes(data)
+              shas.append(hashlib.sha256(data).hexdigest())
+          assert shas[0]==shas[1], 'compatibility fix not identical'
           p=Path('Stage5S_SOURCE_LOCK.json')
-          meta=json.loads(p.read_text(encoding='utf-8'))
-          meta['identical_compiler_compat_fix']='source/numa.h: added #include <iterator> in both variants'
-          meta['compat_header_sha256']=sha[0]
-          p.write_text(json.dumps(meta,indent=2),encoding='utf-8')
-          print(meta['identical_compiler_compat_fix'])
+          info=json.loads(p.read_text(encoding='utf-8'))
+          info['same_compiler_compat_fix']='Added #include <iterator> to source/numa.h in BOTH variants'
+          info['compat_header_sha256']=shas[0]
+          p.write_text(json.dumps(info,indent=2),encoding='utf-8')
+          print(info['same_compiler_compat_fix'])
           PY
 
       - name: Install MSYS2 clang64
