@@ -63,6 +63,32 @@ jobs:
           git -C stage5s_src_187 diff --exit-code
           git -C stage5s_src_146 diff -- source/engine/yaneuraou-engine/yaneuraou-search.cpp
 
+      - name: Apply identical Clang iterator-header compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          sha = []
+          for name in ('stage5s_src_146', 'stage5s_src_187'):
+              p = Path(name)/'source/numa.h'
+              b = p.read_bytes()
+              anchor = b'#include <algorithm>\\n'
+              assert b.count(anchor) == 1, 'Expected unique algorithm include'
+              assert b'#include <iterator>' not in b
+              b = b.replace(anchor, anchor + b'#include <iterator>\\n', 1)
+              p.write_bytes(b)
+              sha.append(hashlib.sha256(b).hexdigest())
+          assert sha[0] == sha[1], 'Compatibility headers unexpectedly differ'
+          p=Path('Stage5S_SOURCE_LOCK.json')
+          meta=json.loads(p.read_text(encoding='utf-8'))
+          meta['identical_compiler_compat_fix']='source/numa.h: added #include <iterator> in both variants'
+          meta['compat_header_sha256']=sha[0]
+          p.write_text(json.dumps(meta,indent=2),encoding='utf-8')
+          print(meta['identical_compiler_compat_fix'])
+          PY
+
       - name: Install MSYS2 clang64
         uses: msys2/setup-msys2@v2
         with:
