@@ -1,0 +1,123 @@
+name: Stage5S nonPawnWeight 146 vs 187 AVX2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stage5s-nonpawn-ab.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-pair:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Checkout pinned source twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=c1b80eaa09fe13d5f12b1599d1ae4d53c224de30
+          git clone https://github.com/yaneurao/YaneuraOu.git upstream
+          git -C upstream checkout --detach "$PIN"
+          test "$(git -C upstream rev-parse HEAD)" = "$PIN"
+          git -C upstream worktree add --detach ../stage5s_src_146 "$PIN"
+          git -C upstream worktree add --detach ../stage5s_src_187 "$PIN"
+
+      - name: Verify single-source change, preserve 187 original
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json, hashlib
+          p='source/engine/yaneuraou-engine/yaneuraou-search.cpp'
+          a=Path('stage5s_src_146')/p
+          b=Path('stage5s_src_187')/p
+          original=b.read_bytes()
+          old=b'constexpr int nonPawnWeight = 187;'
+          new=b'constexpr int nonPawnWeight = 146;'
+          assert a.read_bytes()==original
+          assert original.count(old)==1 and original.count(new)==0
+          a.write_bytes(original.replace(old,new))
+          assert a.read_bytes().replace(new,old)==original
+          assert b.read_bytes()==original
+          info={'pinned_commit':'c1b80eaa09fe13d5f12b1599d1ae4d53c224de30',
+                'only_source_edit':'constexpr int nonPawnWeight = 187; -> 146;',
+                'source146_sha256':hashlib.sha256(a.read_bytes()).hexdigest(),
+                'source187_sha256':hashlib.sha256(b.read_bytes()).hexdigest(),
+                'provenance_warning':'Controlled A/B on pinned public upstream, not a Stage5O binary-identical rebuild.'}
+          Path('Stage5S_SOURCE_LOCK.json').write_text(json.dumps(info,indent=2),encoding='utf-8')
+          print(json.dumps(info,indent=2))
+          PY
+          git -C stage5s_src_146 diff --check
+          git -C stage5s_src_187 diff --exit-code
+          git -C stage5s_src_146 diff -- source/engine/yaneuraou-engine/yaneuraou-search.cpp
+
+      - name: Install MSYS2 clang64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            make
+            python
+            mingw-w64-clang-x86_64-clang
+
+      - name: Build 146 Windows AVX2
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd stage5s_src_146/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_8_64_progress8
+          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_8_64_progress8 ENGINE_NAME=Stage5S_nonPawn_AB TARGET_CPU=AVX2
+          test -s YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe "$GITHUB_WORKSPACE/Stage5S_NonPawn146_AVX2.exe"
+
+      - name: Build 187 Windows AVX2
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd stage5s_src_187/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_8_64_progress8
+          make -j2 normal COMPILER=clang++ YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_8_64_progress8 ENGINE_NAME=Stage5S_nonPawn_AB TARGET_CPU=AVX2
+          test -s YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe "$GITHUB_WORKSPACE/Stage5S_NonPawn187_AVX2.exe"
+
+      - name: Verify executables, USI and hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $records = @{}
+          foreach ($n in @(146,187)) {
+            $p = "Stage5S_NonPawn${n}_AVX2.exe"
+            if (-not (Test-Path -LiteralPath $p)) { throw "Missing $p" }
+            "usi`nquit`n" | & (Join-Path $PWD $p) | Out-File -FilePath "usi_${n}.txt" -Encoding utf8
+            if (-not (Select-String -Path "usi_${n}.txt" -Pattern '^usiok\\s*$' -Quiet)) { throw "USI failed: $n" }
+            $records["$n"] = @{ name=$p; bytes=(Get-Item $p).Length; sha256=(Get-FileHash $p -Algorithm SHA256).Hash }
+          }
+          $records | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 Stage5S_BINARIES_SHA256.json
+          Get-Content Stage5S_BINARIES_SHA256.json
+
+      - name: Upload reproducible comparison binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stage5S_NonPawn146_187_AVX2_FIXED_UPSTREAM_AB
+          path: |
+            Stage5S_NonPawn146_AVX2.exe
+            Stage5S_NonPawn187_AVX2.exe
+            Stage5S_SOURCE_LOCK.json
+            Stage5S_BINARIES_SHA256.json
+            usi_146.txt
+            usi_187.txt
+          if-no-files-found: error
