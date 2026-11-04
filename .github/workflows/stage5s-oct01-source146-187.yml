@@ -1,0 +1,92 @@
+name: Stage5S Oct01 exact-source nonPawnWeight 146-vs-187 AVX2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-oct01-pair:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Checkout user build repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify October 1 archive and create exact A/B pair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'stage5s/source.zip')) {
+            throw "Required stage5s/source.zip is missing. Do NOT substitute public upstream: this must be the SHA-locked 2026-10-01 archive."
+          }
+          python stage5s/stage5s_prepare.py stage5s/source.zip
+          if ($LASTEXITCODE -ne 0) { throw 'SOURCE_PAIR failed' }
+
+      - name: Install MSYS2 Clang64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            make
+            python
+            mingw-w64-clang-x86_64-clang
+
+      - name: Build 146 Windows AVX2 (original source)
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd stage5s_build_146/source
+          make -j2 normal COMPILER=clang++ TARGET_CPU=AVX2 YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_8_64_progress8 ENGINE_NAME=Stage5S_Oct01_AB
+          test -s YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe "$GITHUB_WORKSPACE/Stage5S_Oct01_NonPawn146_AVX2.exe"
+
+      - name: Build 187 Windows AVX2 (single-constant patch)
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd stage5s_build_187/source
+          make -j2 normal COMPILER=clang++ TARGET_CPU=AVX2 YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024_8_64_progress8 ENGINE_NAME=Stage5S_Oct01_AB
+          test -s YaneuraOu-by-gcc.exe
+          cp YaneuraOu-by-gcc.exe "$GITHUB_WORKSPACE/Stage5S_Oct01_NonPawn187_AVX2.exe"
+
+      - name: Verify USI and record both executable hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $record = @{}
+          foreach ($n in @(146,187)) {
+            $f = "Stage5S_Oct01_NonPawn${n}_AVX2.exe"
+            if (-not (Test-Path -LiteralPath $f)) { throw "Missing $f" }
+            "usi`nquit`n" | & (Join-Path $PWD $f) | Out-File -FilePath "usi_${n}.txt" -Encoding utf8
+            if ($LASTEXITCODE -ne 0) { throw "USI return code failed for $n" }
+            if (-not (Select-String -Path "usi_${n}.txt" -Pattern '^usiok' -Quiet)) { throw "USI check failed for $n" }
+            $record["$n"] = @{
+              file=$f
+              bytes=(Get-Item -LiteralPath $f).Length
+              sha256=(Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash
+            }
+          }
+          $record | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 Stage5S_BINARIES_SHA256.json
+          Get-Content Stage5S_BINARIES_SHA256.json
+
+      - name: Upload both verified binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stage5S_Oct01_Source146_187_WindowsAVX2
+          path: |
+            Stage5S_Oct01_NonPawn146_AVX2.exe
+            Stage5S_Oct01_NonPawn187_AVX2.exe
+            STAGE5S_BUILD_SOURCE_LOCK.json
+            Stage5S_BINARIES_SHA256.json
+            usi_146.txt
+            usi_187.txt
+          if-no-files-found: error
