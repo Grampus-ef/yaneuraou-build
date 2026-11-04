@@ -103,7 +103,7 @@ jobs:
             $p = "Stage5S_NonPawn${n}_AVX2.exe"
             if (-not (Test-Path -LiteralPath $p)) { throw "Missing $p" }
             "usi`nquit`n" | & (Join-Path $PWD $p) | Out-File -FilePath "usi_${n}.txt" -Encoding utf8
-            if (-not (Select-String -Path "usi_${n}.txt" -Pattern '^usiok\\s*$' -Quiet)) { throw "USI failed: $n" }
+            if (-not (Select-String -Path "usi_${n}.txt" -Pattern '^usiok' -Quiet)) { throw "USI failed: $n" }
             $records["$n"] = @{ name=$p; bytes=(Get-Item $p).Length; sha256=(Get-FileHash $p -Algorithm SHA256).Hash }
           }
           $records | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 Stage5S_BINARIES_SHA256.json
