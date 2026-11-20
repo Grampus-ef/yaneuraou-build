@@ -1,0 +1,93 @@
+name: Build 11Plus HalfKA1 AVX2 Diagnostic
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-halfka1-11plus.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-halfka1:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Checkout fixed upstream revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=c1b80eaa09fe13d5f12b1599d1ae4d53c224de30
+          git clone https://github.com/yaneurao/YaneuraOu.git official_src
+          git -C official_src checkout --detach "$PIN"
+          test "$(git -C official_src rev-parse HEAD)" = "$PIN"
+          git -C official_src rev-parse HEAD > SOURCE_COMMIT.txt
+
+      - name: Apply pinned-source Clang compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('official_src/source/numa.h')
+          content = p.read_bytes()
+          assert content.count(b'#include <algorithm>') == 1
+          assert b'#include <iterator>' not in content
+          lines = content.splitlines(keepends=True)
+          i = next(i for i, line in enumerate(lines) if line.strip() == b'#include <algorithm>')
+          eol = bytes([13,10]) if lines[i].endswith(bytes([13,10])) else bytes([10])
+          lines.insert(i + 1, b'#include <iterator>' + eol)
+          p.write_bytes(b''.join(lines))
+          print('Applied only #include <iterator> to source/numa.h')
+          PY
+
+      - name: Setup MSYS2 CLANG64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            make
+            python
+            mingw-w64-clang-x86_64-clang
+
+      - name: Build HalfKA1 diagnostic Windows AVX2
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd official_src/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka1_1024_7_64_k3k3
+          make -j2 normal COMPILER=clang++ TARGET_CPU=AVX2 YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka1_1024_7_64_k3k3 ENGINE_NAME=YaneuraOu_HalfKA1_Diagnostic
+          test -s YaneuraOu-by-gcc.exe
+          mkdir -p ../../dist
+          cp YaneuraOu-by-gcc.exe ../../dist/YaneuraOu_SFNN_halfka1_1024_7_64_k3k3_AVX2.exe
+          cp ../../SOURCE_COMMIT.txt ../../dist/SOURCE_COMMIT.txt
+
+      - name: Test USI response and record SHA256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Join-Path $PWD 'dist/YaneuraOu_SFNN_halfka1_1024_7_64_k3k3_AVX2.exe'
+          if (-not (Test-Path -LiteralPath $p)) { throw "Executable missing: $p" }
+          @('usi','quit') | & $p | Out-File 'dist/USI_OUTPUT.txt' -Encoding utf8
+          if (-not (Select-String -Path 'dist/USI_OUTPUT.txt' -Pattern '^usiok' -Quiet)) { throw 'USI handshake failed' }
+          $hash = (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash
+          $size = (Get-Item -LiteralPath $p).Length
+          @("SHA256=$hash","BYTES=$size") | Set-Content -Path 'dist/ENGINE_SHA256.txt' -Encoding ascii
+          Get-Content 'dist/ENGINE_SHA256.txt'
+
+      - name: Upload HalfKA1 build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HalfKA1_1024_7_64_k3k3_AVX2_diag
+          path: dist/
+          if-no-files-found: error
