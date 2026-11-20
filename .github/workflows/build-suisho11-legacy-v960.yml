@@ -1,0 +1,96 @@
+name: Build Suisho Legacy Compatible V9.60 AVX2
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-suisho11-legacy-v960.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - name: Checkout comparison repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Checkout externally validated upstream V9.60 revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIN=9133c527791c8b2f5f378a32df29a5e3752bd41b
+          git clone https://github.com/yaneurao/YaneuraOu.git upstream_v960
+          git -C upstream_v960 checkout --detach "$PIN"
+          test "$(git -C upstream_v960 rev-parse HEAD)" = "$PIN"
+          echo "$PIN" > SOURCE_COMMIT.txt
+
+      - name: Apply clang compatibility header to separate build copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('upstream_v960/source/numa.h')
+          data=p.read_bytes()
+          assert data.count(b'#include <algorithm>')==1
+          assert b'#include <iterator>' not in data
+          ls=data.splitlines(keepends=True)
+          i=next(i for i, line in enumerate(ls) if line.strip()==b'#include <algorithm>')
+          eol=bytes([13,10]) if ls[i].endswith(bytes([13,10])) else bytes([10])
+          ls.insert(i+1,b'#include <iterator>'+eol)
+          p.write_bytes(b''.join(ls))
+          print('Clang fix: numa.h += #include <iterator>')
+          PY
+
+      - name: Install MSYS2 CLANG64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            git
+            make
+            python
+            mingw-w64-clang-x86_64-clang
+
+      - name: Build precisely the edition in public successful Suisho 11 test
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          cd upstream_v960/source
+          make clean YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024-7-64-k3k3
+          make -j2 normal COMPILER=clang++ PYTHON=python TARGET_CPU=AVX2 YANEURAOU_EDITION=YANEURAOU_ENGINE_SFNN_halfka2_1024-7-64-k3k3 ENGINE_NAME=YaneuraOu_V960_SuishoLegacy
+          test -s YaneuraOu-by-gcc.exe
+          mkdir -p ../../dist
+          cp YaneuraOu-by-gcc.exe ../../dist/YaneuraOu_V960_SuishoLegacy_1024_7_64_k3k3_AVX2.exe
+          cp ../../SOURCE_COMMIT.txt ../../dist/SOURCE_COMMIT.txt
+
+      - name: Verify USI and record executable fingerprint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Join-Path $PWD 'dist/YaneuraOu_V960_SuishoLegacy_1024_7_64_k3k3_AVX2.exe'
+          if (-not (Test-Path -LiteralPath $p)) { throw "Missing exe $p" }
+          @('usi','quit') | & $p | Out-File -FilePath 'dist/USI_OUTPUT.txt' -Encoding utf8
+          if (-not (Select-String -Path 'dist/USI_OUTPUT.txt' -Pattern '^usiok' -Quiet)) { throw 'USI handshake failed' }
+          @(
+             "PIN=9133c527791c8b2f5f378a32df29a5e3752bd41b",
+             "SHA256=$((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash)",
+             "BYTES=$((Get-Item -LiteralPath $p).Length)",
+             "ROLE=Suisho11/11Plus legacy HalfKA(Friend)[131949] compatibility test; evaluation semantics require Windows verification."
+           ) | Set-Content -Path 'dist/BUILD_FINGERPRINT.txt' -Encoding utf8
+          Get-Content 'dist/BUILD_FINGERPRINT.txt'
+
+      - name: Upload only diagnostic executable and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: Suisho11_LegacyV960_AVX2_DIAG
+          path: dist/
+          if-no-files-found: error
