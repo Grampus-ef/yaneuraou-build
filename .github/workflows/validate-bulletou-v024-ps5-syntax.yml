@@ -1,0 +1,38 @@
+name: Validate BulletOu V024 PowerShell 5.1 Syntax
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-bulletou-v024-ps5-syntax.yml'
+permissions:
+  contents: read
+jobs:
+  grammar:
+    runs-on: windows-2022
+    steps:
+      - name: Windows PowerShell 5.1 full-script AST grammar check, no script execution
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $b64=@'
+          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
+          '@
+          $compressed=[Convert]::FromBase64String(($b64 -replace '\s',''))
+          $inputBytes=[IO.MemoryStream]::new($compressed)
+          $gunzip=[IO.Compression.GzipStream]::new($inputBytes,[IO.Compression.CompressionMode]::Decompress)
+          $outputBytes=[IO.MemoryStream]::new()
+          $gunzip.CopyTo($outputBytes)
+          $scriptPath=Join-Path $env:TEMP 'PROBE_500M_SM75_BCE_AB_V024.ps1'
+          [IO.File]::WriteAllBytes($scriptPath,$outputBytes.ToArray())
+          $actual=(Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash
+          if($actual -ne '7B61E979BCCABE80288C5F14D853D04CDAC95B5CA6637766E2AAE3497618E3A1'){throw "SCRIPT_HASH_MISMATCH: $actual"}
+          $tokens=$null
+          $parseErrors=$null
+          $ast=[System.Management.Automation.Language.Parser]::ParseFile($scriptPath,[ref]$tokens,[ref]$parseErrors)
+          if($parseErrors.Count -gt 0){
+            foreach($e in $parseErrors){Write-Error "$($e.Extent.StartLineNumber): $($e.Message)"}
+            throw 'POWERSHELL_GRAMMAR_FAIL'
+          }
+          if($null -eq $ast){throw 'AST_MISSING'}
+          Write-Host 'POWERSHELL_5_1_FULL_SCRIPT_PARSE_PASS'
+          Write-Host "SHA256=$actual"
