@@ -28,12 +28,12 @@ jobs:
           if($raw[0] -ne 239 -or $raw[1] -ne 187 -or $raw[2] -ne 191) {throw 'V024_SCRIPT_BOM_MISSING'}
           $s=[Text.Encoding]::UTF8.GetString($raw,3,$raw.Length-3)
           $s=$s.Replace('V024','V025').Replace('v0.2.4','v0.2.5')
-          $needle="\u0024gpuArgs=@('--backend','cuda-cpp','--cuda-cpp-smoke')"
+          $needle='$gpuArgs=@(''--backend'',''cuda-cpp'',''--cuda-cpp-smoke'')'
           $newLines=@(
             '# The CLI requires --teacher even for --cuda-cpp-smoke. Use existing PSV teacher path,'
             '# which is passed as an argument only; no training should take place in this smoke mode.'
             'RequireFile $teacher'
-            "$\u0067puArgs=@('--backend','cuda-cpp','--teacher',$teacher,'--cuda-cpp-smoke')"
+            '$gpuArgs=@(''--backend'',''cuda-cpp'',''--teacher'',$teacher,''--cuda-cpp-smoke'')'
           )
           $replacement=($newLines -join [char]10)
           if(-not $s.Contains($needle)) {throw 'V024_GPU_SMOKE_ANCHOR_MISSING'}
@@ -56,5 +56,6 @@ jobs:
           if($null -eq $ast){throw 'AST_MISSING'}
           Write-Host 'POWERSHELL_5_1_FULL_SCRIPT_PARSE_PASS'
           Write-Host "SHA256=$actual"
-          if(-not ([IO.File]::ReadAllText($scriptPath).Contains("--teacher',$teacher,'--cuda-cpp-smoke"))) { throw 'TEACHER_ARG_MISSING' }
+          $expectedGpuArg='$gpuArgs=@(''--backend'',''cuda-cpp'',''--teacher'',$teacher,''--cuda-cpp-smoke'')'
+          if(-not ([IO.File]::ReadAllText($scriptPath).Contains($expectedGpuArg))) { throw 'TEACHER_ARG_MISSING' }
           Write-Host 'CUDA_SMOKE_TEACHER_ARG_VERIFIED'
