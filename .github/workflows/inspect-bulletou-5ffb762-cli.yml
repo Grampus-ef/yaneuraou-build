@@ -1,0 +1,46 @@
+name: Inspect BulletOu 5ffb762 CLI without training
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/inspect-bulletou-5ffb762-cli.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve successful pinned BulletOu artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BulletOu-official-5ffb762-WinCUDA128
+          repository: Grampus-ef/yaneuraou-build
+          run-id: 45014361715
+          github-token: ${{ github.token }}
+          path: compiled/
+      - name: Probe CLI, upload only small evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          if (-not (Test-Path 'compiled/bulletou.exe')) { throw 'missing compiled/bulletou.exe' }
+          Get-FileHash 'compiled/bulletou.exe' -Algorithm SHA256 | Format-List | Out-File -Encoding ascii 'evidence/EXE_SHA256.txt'
+          & 'compiled/bulletou.exe' --help 2>&1 | Out-File -Encoding utf8 'evidence/BULLETOU_HELP_5FFB762.txt'
+          if ($LASTEXITCODE -ne 0) { throw "bulletou --help failed: $LASTEXITCODE" }
+          Copy-Item 'compiled/BUILD_PROVENANCE.txt' 'evidence/BUILD_PROVENANCE.txt' -ErrorAction Stop
+          $help = Get-Content 'evidence/BULLETOU_HELP_5FFB762.txt'
+          @('state','resume','checkpoint','smoke','epochs','superbatches','batches','initial','dry','update','teacher','output','positions','optimizer','cuda-cpp') | ForEach-Object {
+            $pattern = $_
+            Write-Host "=== MATCH: $pattern ==="
+            $help | Select-String -SimpleMatch $pattern | Select-Object -First 35 | ForEach-Object { Write-Host $_.Line }
+          }
+      - name: Upload CLI evidence (not the huge binary)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-5ffb762-CLI-evidence
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
