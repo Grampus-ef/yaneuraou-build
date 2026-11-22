@@ -1,0 +1,94 @@
+name: Build BulletOu Official 5ffb762 Windows CUDA 12.8.1
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-bulletou-official-5ffb762-win-cuda128.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+      - name: Checkout pinned official BulletOu source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git clone --branch shogi-support --single-branch https://github.com/yaneurao/BulletOu.git BulletOu
+          if ($LASTEXITCODE -ne 0) { throw 'git clone failed' }
+          git -C BulletOu checkout --detach 5ffb762765d19a7d0acea134ce5350640adf738b
+          if ($LASTEXITCODE -ne 0) { throw 'git checkout failed' }
+          $actual = (git -C BulletOu rev-parse HEAD).Trim()
+          if ($actual -ne '5ffb762765d19a7d0acea134ce5350640adf738b') { throw "Unexpected commit: $actual" }
+          if ((git -C BulletOu status --porcelain).Length -ne 0) { throw 'Source checkout not clean' }
+      - name: Set up MSVC x64
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Set up stable Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '12.8.1'
+          method: local
+      - name: Verify build tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'rustc failed' }
+          cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'cargo failed' }
+          nvcc --version
+          if ($LASTEXITCODE -ne 0) { throw 'nvcc failed' }
+          if (-not $env:CUDA_PATH) { throw 'CUDA_PATH is not set' }
+          if (-not (Test-Path (Join-Path $env:CUDA_PATH 'lib/x64'))) { throw 'CUDA lib/x64 missing' }
+      - name: Build original upstream source (no FT-freeze patch)
+        shell: pwsh
+        working-directory: BulletOu
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build --locked --release --features cuda-cpp-backend --example bulletou
+          if ($LASTEXITCODE -ne 0) { throw 'BulletOu build failed' }
+          if (-not (Test-Path 'target/release/examples/bulletou.exe')) { throw 'bulletou.exe missing' }
+      - name: Verify CLI and collect build provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'BulletOu/target/release/examples/bulletou.exe' 'dist/bulletou.exe'
+          $cudaBin = Join-Path $env:CUDA_PATH 'bin'
+          foreach ($dll in @('cudart64_12.dll','cublas64_12.dll','cublasLt64_12.dll','nvJitLink_120_0.dll')) {
+            $source = Join-Path $cudaBin $dll
+            if (Test-Path $source) { Copy-Item $source (Join-Path 'dist' $dll) }
+          }
+          & 'dist/bulletou.exe' --help 2>&1 | Out-File -Encoding utf8 'dist/bulletou-help.txt'
+          if ($LASTEXITCODE -ne 0) { throw 'BulletOu --help failed' }
+          Get-FileHash 'dist/bulletou.exe' -Algorithm SHA256 | Format-List | Out-File -Encoding ascii 'dist/SHA256.txt'
+          git -C BulletOu rev-parse HEAD | Out-File -Encoding ascii 'dist/SOURCE_COMMIT.txt'
+          git -C BulletOu status --porcelain | Out-File -Encoding ascii 'dist/SOURCE_STATUS.txt'
+          rustc --version | Out-File -Encoding ascii 'dist/RUST_VERSION.txt'
+          cargo --version | Out-File -Encoding ascii 'dist/CARGO_VERSION.txt'
+          nvcc --version | Out-File -Encoding ascii 'dist/NVCC_VERSION.txt'
+          $dumpbin = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+          if ($dumpbin) { & dumpbin.exe /dependents 'dist/bulletou.exe' | Out-File -Encoding utf8 'dist/DEPENDENCIES.txt' }
+          @'
+          Origin: https://github.com/yaneurao/BulletOu
+          Branch: shogi-support
+          Commit: 5ffb762765d19a7d0acea134ce5350640adf738b
+          Build: GitHub Actions windows-2022 / CUDA 12.8.1 / release / cuda-cpp-backend
+          Patches: NONE (original upstream source)
+          Test: --help only; hosted runner has no CUDA GPU for actual training/checkpoint checks
+          Warning: NOT proved compatible with 500M checkpoint; do not replace existing bulletou.exe
+          '@ | Set-Content -Encoding utf8 'dist/BUILD_PROVENANCE.txt'
+      - name: Upload Windows CUDA build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-official-5ffb762-WinCUDA128
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
