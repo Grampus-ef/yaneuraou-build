@@ -52,7 +52,11 @@ jobs:
         working-directory: BulletOu
         run: |
           $ErrorActionPreference = 'Stop'
-          # RTX 2060 is Compute Capability 7.5. Force native cubin so older drivers do not need PTX JIT.\n          # NVCC_APPEND_FLAGS is an official nvcc environment variable; no source modifications.\n          $env:NVCC_APPEND_FLAGS='-gencode=arch=compute_75,code=sm_75'\n          Write-Host "NVCC_APPEND_FLAGS=$env:NVCC_APPEND_FLAGS"\n          cargo build --locked --release --features cuda-cpp-backend --example bulletou
+          # RTX 2060 is Compute Capability 7.5. Force native cubin so older drivers do not need PTX JIT.
+          # NVCC_APPEND_FLAGS is an official nvcc environment variable; no source modifications.
+          $env:NVCC_APPEND_FLAGS='-gencode=arch=compute_75,code=sm_75'
+          Write-Host "NVCC_APPEND_FLAGS=$env:NVCC_APPEND_FLAGS"
+          cargo build --locked --release --features cuda-cpp-backend --example bulletou
           if ($LASTEXITCODE -ne 0) { throw 'BulletOu build failed' }
           if (-not (Test-Path 'target/release/examples/bulletou.exe')) { throw 'bulletou.exe missing' }
       - name: Verify CLI and collect build provenance
@@ -66,7 +70,14 @@ jobs:
             $source = Join-Path $cudaBin $dll
             if (Test-Path $source) { Copy-Item $source (Join-Path 'dist' $dll) }
           }
-          $cuobj = Join-Path $env:CUDA_PATH 'bin/cuobjdump.exe'\n          if (-not (Test-Path $cuobj)) { throw 'cuobjdump.exe not found' }\n          $archList = (& $cuobj --list-elf 'dist/bulletou.exe' 2>&1 | Out-String)\n          $archList | Set-Content -Encoding utf8 'dist/CUBIN_ARCH_LIST.txt'\n          if ($LASTEXITCODE -ne 0) { throw 'cuobjdump failed to inspect built exe' }\n          if ($archList -notmatch 'sm_75') { throw 'sm_75 cubin not found in new exe; refuse artifact' }\n          Write-Host 'NATIVE_SM75_CUBIN_CONFIRMED'\n          & 'dist/bulletou.exe' --help 2>&1 | Out-File -Encoding utf8 'dist/bulletou-help.txt'
+          $cuobj = Join-Path $env:CUDA_PATH 'bin/cuobjdump.exe'
+          if (-not (Test-Path $cuobj)) { throw 'cuobjdump.exe not found' }
+          $archList = (& $cuobj --list-elf 'dist/bulletou.exe' 2>&1 | Out-String)
+          $archList | Set-Content -Encoding utf8 'dist/CUBIN_ARCH_LIST.txt'
+          if ($LASTEXITCODE -ne 0) { throw 'cuobjdump failed to inspect built exe' }
+          if ($archList -notmatch 'sm_75') { throw 'sm_75 cubin not found in new exe; refuse artifact' }
+          Write-Host 'NATIVE_SM75_CUBIN_CONFIRMED'
+          & 'dist/bulletou.exe' --help 2>&1 | Out-File -Encoding utf8 'dist/bulletou-help.txt'
           if ($LASTEXITCODE -ne 0) { throw 'BulletOu --help failed' }
           Get-FileHash 'dist/bulletou.exe' -Algorithm SHA256 | Format-List | Out-File -Encoding ascii 'dist/SHA256.txt'
           git -C BulletOu rev-parse HEAD | Out-File -Encoding ascii 'dist/SOURCE_COMMIT.txt'
@@ -80,7 +91,8 @@ jobs:
           Origin: https://github.com/yaneurao/BulletOu
           Branch: shogi-support
           Commit: 5ffb762765d19a7d0acea134ce5350640adf738b
-          Build: GitHub Actions windows-2022 / CUDA 12.8.1 / release / cuda-cpp-backend\n          Device target: native RTX2060 sm_75 cubin; NVCC_APPEND_FLAGS=-gencode=arch=compute_75,code=sm_75; cuobjdump validated
+          Build: GitHub Actions windows-2022 / CUDA 12.8.1 / release / cuda-cpp-backend
+          Device target: native RTX2060 sm_75 cubin; NVCC_APPEND_FLAGS=-gencode=arch=compute_75,code=sm_75; cuobjdump validated
           Patches: NONE (original upstream source)
           Test: --help only; hosted runner has no CUDA GPU for actual training/checkpoint checks
           Warning: NOT proved compatible with 500M checkpoint; do not replace existing bulletou.exe
@@ -91,4 +103,16 @@ jobs:
           name: BulletOu-5ffb762-RTX2060-sm75-CUDA128
           path: dist/
           if-no-files-found: error
-          retention-days: 30\n      - name: Upload small proof of RTX2060 native code\n        uses: actions/upload-artifact@v4\n        with:\n          name: BulletOu-5ffb762-sm75-proof\n          path: |\n            dist/CUBIN_ARCH_LIST.txt\n            dist/SHA256.txt\n            dist/SOURCE_COMMIT.txt\n            dist/BUILD_PROVENANCE.txt\n            dist/NVCC_VERSION.txt\n          if-no-files-found: error\n          retention-days: 30
+          retention-days: 30
+      - name: Upload small proof of RTX2060 native code
+        uses: actions/upload-artifact@v4
+        with:
+          name: BulletOu-5ffb762-sm75-proof
+          path: |
+            dist/CUBIN_ARCH_LIST.txt
+            dist/SHA256.txt
+            dist/SOURCE_COMMIT.txt
+            dist/BUILD_PROVENANCE.txt
+            dist/NVCC_VERSION.txt
+          if-no-files-found: error
+          retention-days: 30
