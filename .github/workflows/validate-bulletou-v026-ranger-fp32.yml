@@ -1,0 +1,79 @@
+name: Validate BulletOu Ranger FP32 classifier V026
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-bulletou-v026-ranger-fp32.yml'
+permissions:
+  contents: read
+jobs:
+  mock:
+    runs-on: windows-2022
+    steps:
+      - name: Windows PowerShell 5.1 rounding classifier positive and negative cases
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $helper=@'
+          # This module is side-effect-free: only defines the float comparison classifier.
+          # DO NOT turn an arbitrary CUDA runtime failure into a PASS.
+          function Test-ExpectedCudaRangerRounding {
+            param(
+              [Parameter(Mandatory=$true)][int]$ExitCode,
+              [Parameter(Mandatory=$true)][string]$StdoutPath,
+              [Parameter(Mandatory=$true)][string]$StderrPath
+            )
+            $rejected=[pscustomobject]@{Accept=$false;MaxAbsDiff=[double]::NaN;Reason='NOT_EXPECTED_RANGER_FP32_MISMATCH'}
+            if($ExitCode -ne 2){return $rejected}
+            $log=''
+            if(Test-Path -LiteralPath $StderrPath -PathType Leaf){$log=[IO.File]::ReadAllText($StderrPath)}
+            if([string]::IsNullOrWhiteSpace($log)){
+              if(Test-Path -LiteralPath $StdoutPath -PathType Leaf){$log=[IO.File]::ReadAllText($StdoutPath)}
+            }
+            $errorLines=[regex]::Matches($log,'(?m)^[ \t]*error:')
+            if($errorLines.Count -ne 1){return $rejected}
+            $pattern='(?m)^[ \t]*error: cuda-cpp persistent ranger smoke mismatch: host=\[([^\]\r\n]+)\] device=\[([^\]\r\n]+)\][ \t]*\r?$'
+            $m=[regex]::Match($log,$pattern)
+            if(-not $m.Success){return $rejected}
+            $cpu=$m.Groups[1].Value -split ','
+            $gpu=$m.Groups[2].Value -split ','
+            if($cpu.Length -ne 4 -or $gpu.Length -ne 4){return $rejected}
+            $culture=[Globalization.CultureInfo]::InvariantCulture
+            $numberStyles=[Globalization.NumberStyles]::Float
+            $max=0.0
+            for($i=0;$i -lt 4;$i++){
+              $c=[double]0; $g=[double]0
+              if(-not [double]::TryParse($cpu[$i].Trim(),$numberStyles,$culture,[ref]$c)){return $rejected}
+              if(-not [double]::TryParse($gpu[$i].Trim(),$numberStyles,$culture,[ref]$g)){return $rejected}
+              if([double]::IsNaN($c) -or [double]::IsNaN($g) -or [double]::IsInfinity($c) -or [double]::IsInfinity($g)){return $rejected}
+              $delta=[math]::Abs($c-$g)
+              if($delta -gt $max){$max=$delta}
+            }
+            if($max -gt 1.0e-6){return [pscustomobject]@{Accept=$false;MaxAbsDiff=$max;Reason='RANGER_MISMATCH_EXCEEDS_1E-6'}}
+            return [pscustomobject]@{Accept=$true;MaxAbsDiff=$max;Reason='EXPECTED_RANGER_FP32_ROUNDING_ONLY'}
+          }
+          '@
+          $path=Join-Path $env:TEMP 'CUDA_RANGER_ROUNDING_V026.ps1'
+          [IO.File]::WriteAllText($path,$helper,[Text.Encoding]::ASCII)
+          $t=$null; $e=$null; $ast=[System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$t,[ref]$e)
+          if($null -eq $ast -or $e.Count -ne 0){throw 'PS5_CLASSIFIER_AST_PARSE_FAILED'}
+          . $path
+          $stdout=Join-Path $env:TEMP 'v026-stdout.txt'; $stderr=Join-Path $env:TEMP 'v026-stderr.txt'
+          Set-Content -LiteralPath $stdout -Encoding ascii -Value 'CUDA backend smoke'
+          $known='error: cuda-cpp persistent ranger smoke mismatch: host=[0.097500004, -0.19500001, 0.29000002, -0.385] device=[0.097500004, -0.19500001, 0.29000002, -0.38500002]'
+          Set-Content -LiteralPath $stderr -Encoding ascii -Value $known
+          $r=Test-ExpectedCudaRangerRounding -ExitCode 2 -StdoutPath $stdout -StderrPath $stderr
+          if(-not $r.Accept -or $r.MaxAbsDiff -lt 1e-9 -or $r.MaxAbsDiff -gt 1e-6){throw ('EXPECTED_ROUNDING_WAS_REJECTED: '+$r.Reason+' diff='+$r.MaxAbsDiff)}
+          Write-Host ('ROUNDING_ACCEPTED diff='+$r.MaxAbsDiff)
+          $r=Test-ExpectedCudaRangerRounding -ExitCode 222 -StdoutPath $stdout -StderrPath $stderr
+          if($r.Accept){throw 'WRONG_EXIT_CODE_ACCEPTED'}
+          Set-Content -LiteralPath $stderr -Encoding ascii -Value ($known+"`nerror: CUDA launch failure")
+          $r=Test-ExpectedCudaRangerRounding -ExitCode 2 -StdoutPath $stdout -StderrPath $stderr
+          if($r.Accept){throw 'ADDITIONAL_CUDA_ERROR_ACCEPTED'}
+          Set-Content -LiteralPath $stderr -Encoding ascii -Value 'error: cuda-cpp persistent ranger smoke mismatch: host=[0.0, 0.0, 0.0, 0.0] device=[0.0, 0.0, 0.0, 0.01]'
+          $r=Test-ExpectedCudaRangerRounding -ExitCode 2 -StdoutPath $stdout -StderrPath $stderr
+          if($r.Accept){throw 'LARGE_MISMATCH_ACCEPTED'}
+          Set-Content -LiteralPath $stderr -Encoding ascii -Value 'error: fill (f32 kernel) launch: unsupported toolchain. (222)'
+          $r=Test-ExpectedCudaRangerRounding -ExitCode 2 -StdoutPath $stdout -StderrPath $stderr
+          if($r.Accept){throw 'PTX222_ERROR_ACCEPTED'}
+          Write-Host 'WINDOWS_PS5_RANGER_CLASSIFIER_4_CASES_PASS'
